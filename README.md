@@ -2,28 +2,45 @@
 
 `gowt` is a code generator that produces concrete Go types from parameterized
 `_gowt.go` template files.  It bridges the gap between Go's type-parameter syntax
-and the common pattern of *wrapping* one environment/base type inside another
-with additional fields and behaviour.  Rather than hand-writing repetitive
+and the common pattern of embedding a parametric base type in a struct with
+additional fields and behaviour.  Rather than hand-writing repetitive
 struct+constructor combinations, you write a single generic template once and
 instantiate it for every concrete base type with a one-line comment directive.
 
 ## Motivation
 
-Go generics let you write parameterized code, but they cannot remove the type
-parameter from the public API: callers must always spell out the full
-`MyType[ConcreteBase]`.  When building layered environment or decorator
-hierarchies, you often want a *concrete* exported type that embeds a specific
-base, with its own constructor and helpers — but the struct layout and
-constructor body are structurally identical across all layers.
+A common Go pattern is a struct that *embeds* a base type and adds fields or
+behaviour on top — decorators, layered configurations, middleware wrappers, etc.
+When the same struct layout needs to work with several different base types, the
+natural approach would be a generic struct that embeds its type parameter:
 
-`gowt` automates exactly this: you author a `_gowt.go` template in valid Go
-generics syntax, then stamp out concrete, non-generic types for each base you
-need.  Template files carry a `//go:build ignore` constraint so the Go toolchain
-excludes them from normal builds but still includes them in module downloads —
-this means cross-package templates work even when the template lives in a
-dependency fetched from the module proxy.  The generated code is fully
-`gofmt`-formatted, carries a `DO NOT EDIT` header, and is meant to be committed
-alongside your sources.
+```go
+type Wrapper[Base any] struct {
+    Base        // ← embed the type parameter
+    ExtraField  int
+}
+```
+
+However, **Go does not allow embedding a type parameter** — the compiler
+rejects `Base` as an embedded field when `Base` is a type parameter.  This
+means you cannot write a single generic type that embeds different base types;
+instead you must hand-write a separate struct (plus constructor, helpers, etc.)
+for every concrete base — even though the struct layout and constructor body
+are structurally identical.
+
+Go generics have a second limitation here: even if embedding were allowed,
+callers would always have to spell out the full `Wrapper[ConcreteBase]`.  In a
+public API you typically want a plain, concrete type name.
+
+`gowt` solves both problems.  You author a `_gowt.go` template in valid Go
+generics syntax (with a `//go:build ignore` constraint so the compiler never
+sees the illegal embedding), then stamp out concrete, non-generic types for
+each base you need with a one-line comment directive.  The template files use
+`.go` extension so they are included in module downloads — this means
+cross-package templates work even when the template lives in a dependency
+fetched from the module proxy.  The generated code is fully `gofmt`-formatted,
+carries a `DO NOT EDIT` header, and is meant to be committed alongside your
+sources.
 
 ## Quick start
 
@@ -48,8 +65,10 @@ directory as the `.go` file containing the directive.
 A `_gowt.go` file is ordinary Go source — parseable by `go/parser` — that
 defines a **struct type with exactly one type parameter** representing the
 embedded base type, together with any number of functions (generic or
-non-generic) that operate on that type.  Every template must start with
-`//go:build ignore` so the Go toolchain skips it during normal builds.
+non-generic) that operate on that type.  The type parameter is used as an
+embedded field, which is not valid Go — the `//go:build ignore` constraint
+ensures the compiler never sees the template, while `go/parser` (which does
+not type-check) can still parse it.
 
 ### Placeholders
 

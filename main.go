@@ -1,19 +1,33 @@
 // gowt generates concrete Go types from parameterized _gowt.go template files.
 //
+// Go does not allow embedding a type parameter in a struct.  This means you
+// cannot write a single generic decorator, wrapper, or layered type that embeds
+// different base types; instead you must hand-write a separate struct (plus
+// constructor, helpers, etc.) for every concrete base — even when the layout
+// and body are structurally identical.  gowt solves this: you write one
+// template in generic syntax and stamp out concrete, non-generic types with a
+// one-line comment directive.
+//
 // # Template files
 //
 // A _gowt.go file is written in regular Go generics syntax and is parseable by
-// go/parser.  It carries a "//go:build ignore" constraint so the Go toolchain
-// excludes it from normal builds but still includes it in module downloads.
-// It defines a struct type with a single type parameter that represents the
-// embedded base type, and optionally methods on that type.
+// go/parser.  It carries a "//go:build ignore" constraint so the compiler never
+// sees the illegal type-parameter embedding, while go/parser (which does not
+// type-check) can still parse it.  The .go extension ensures the file is
+// included in module downloads, so cross-package templates work even from
+// dependencies fetched via the module proxy.
+//
+// The template defines a struct type with a single type parameter that
+// represents the embedded base type, together with any number of functions
+// (generic or non-generic) that operate on that type.
 //
 // Three special identifiers are recognised anywhere in a template:
 //
 //   - NEW is replaced by the constructor named in the "via" clause of the
 //     instantiation directive.
-//   - The template type name itself (and any camelCase-prefixed form of it)
-//     is replaced by the generated type name; see "Name conventions" below.
+//   - *TemplateName* — any symbol containing the template type name gets that
+//     portion replaced by the generated type name, preserving both prefix and
+//     suffix; see "Name conventions" below.
 //   - PACKAGE. (always written with a trailing dot) is replaced by the alias
 //     of the package named in the "using" clause, or removed entirely when no
 //     "using" clause is present; see "Substitution pipeline" step 7.
@@ -86,33 +100,39 @@
 //  0. Explicit renames (from the "renaming" clause): every word-boundary
 //     occurrence of OldName is replaced by NewName, covering both the
 //     declaration and any call sites within the template body.
-//  1. [prefix]TemplateName[...] → [prefix]GeneratedName  (type expressions
-//     with type-argument lists; the optional word prefix is preserved so that
-//     e.g. "NewEnvironment[...]" becomes "NewMyEnv" — see "Name conventions").
+//  1. [prefix]*TemplateName*[suffix][...] → [prefix]*GeneratedName*[suffix]
+//     (type expressions with type-argument lists; both prefix and suffix around
+//     the template name are preserved — see "Name conventions").
 //  2. func F[TypeParam ...] → func F  (removes type parameters from function
 //     signatures).
 //  3. TypeParam: → BaseType:  (struct-literal field keys; must precede step 4).
 //  4. TypeParam → [*]BasePkg.BaseType  (all remaining occurrences in type
 //     expressions; the "*" prefix is added when the instantiation uses a
 //     pointer base type).
-//  5. Bare TemplateName → GeneratedName  (references without type-argument
-//     lists, with the same camelCase-prefix preservation as step 1).
+//  5. Bare *TemplateName* → *GeneratedName*  (references without type-argument
+//     lists, with the same prefix/suffix preservation as step 1).
 //  6. NEW → CtorPkg.CtorFunc.
 //  7. PACKAGE. → usingAlias. (named package) or "" (local package — no qualifier needed in Go).
 //
 // # Name conventions
 //
-// When multiple instantiations of the same template coexist in one package,
-// every instantiation would produce a function named "New", causing a compile
-// error.  To avoid this, a template author may suffix function names with the
-// template type name:
+// Any symbol whose name contains the template type name gets that portion
+// replaced by the generated type name, preserving both prefix and suffix.
+// For example, with template type "Environment" and generated type "MyEnv":
 //
-//	func NewEnvironment[Base epi.Environment](...) (*Environment[Base], error) { ... }
+//	NewEnvironment       → NewMyEnv         (prefix preserved)
+//	EnvironmentConfig    → MyEnvConfig      (suffix preserved)
+//	NewEnvironmentConfig → NewMyEnvConfig   (both preserved)
 //
-// The substitution pipeline treats any word immediately preceding the template
-// type name as a preserved prefix, so "NewEnvironment" becomes "NewMyEnv" when
-// the generated type is "MyEnv".  This is optional: the plain "func New" style
-// continues to work for single-instantiation cases.
+// This applies equally to generic and non-generic functions — for generic
+// functions, the type parameter list is stripped first, then the name is
+// substituted.  Symbols that do not contain the template type name are left
+// unchanged (e.g. "New", "Wrap", "Register").
+//
+// The naming convention is useful when multiple instantiations of the same
+// template coexist in one package — without it, every instantiation would
+// produce identically named symbols.  For single-instantiation cases, the
+// simpler "func New" style works fine.
 //
 // Alternatively, the "renaming" clause can rename functions to arbitrary names
 // regardless of the template type name.
