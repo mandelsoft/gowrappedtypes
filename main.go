@@ -32,65 +32,65 @@
 //     of the package named in the "using" clause, or removed entirely when no
 //     "using" clause is present; see "Substitution pipeline" step 7.
 //
-// Example template (environment_gowt.go):
+// Example template (wrapper_gowt.go):
 //
-//	package mypkg
+//	package template
 //
-//	import "github.com/example/epi"
-//
-//	type Environment[Base epi.Environment] struct {
+//	type Wrapper[Base any] struct {
 //	    Base
-//	    ExtraGroup
+//	    Registry *PACKAGE.Registry
+//	    Label    string
 //	}
 //
-//	func New[Base epi.Environment](opts ...epi.Option) (*Environment[Base], error) {
-//	    e := epi.NewEnvState(opts...)
-//	    base, err := NEW(e)
+//	func NewWrapper[Base any](name string) (*Wrapper[Base], error) {
+//	    b, err := NEW(name)
 //	    if err != nil {
 //	        return nil, err
 //	    }
-//	    return &Environment[Base]{Base: base, ExtraGroup: *NewGroup(e)}, nil
+//	    return &Wrapper[Base]{Base: b, Registry: PACKAGE.NewRegistry(), Label: name}, nil
 //	}
+//
+//	func (w *Wrapper[Base]) GetLabel() string { return w.Label }
+//
+//	func RegisterWrapper(reg *PACKAGE.Registry, w *Wrapper) { reg.Register(w.Label, w) }
+//
+//	func Describe(w *Wrapper) string { return "wrapper:" + w.Label }
 //
 // # Instantiation directives
 //
 // Instantiation is triggered by a specially formatted comment in any .go file
 // in the target package:
 //
-//	// gowt: type GeneratedName wrapping [pkg.]TemplateName[BasePkg.BaseType]
+//	// gowt: type Service wrapping [pkg.]Wrapper[BasePkg.BaseType]
 //
 // The "via" clause is optional; when omitted, NEW defaults to BasePkg.New.
 // An unqualified function name uses the base type's package:
 //
-//	// gowt: type MyEnv wrapping Environment[*common.Environment]
-//	// gowt: type MyEnv wrapping Environment[*common.Environment via New]
-//	// gowt: type MyEnv wrapping Environment[*common.Environment via common.New]
-//
-// The base type may be written as a pointer type:
-//
-//	// gowt: type MyEnv wrapping Environment[*common.Environment]
+//	// gowt: type Service wrapping Wrapper[*base.Handler]
+//	// gowt: type Service wrapping Wrapper[*base.Handler via New]
+//	// gowt: type Service wrapping Wrapper[*base.Handler via base.New]
 //
 // An optional "using" clause names a package whose import is added to the
 // generated file and whose alias replaces the PACKAGE. placeholder in the
 // template (see "Substitution pipeline").  When "using" is omitted, PACKAGE.
 // is removed, leaving an unqualified identifier suitable for the local package:
 //
-//	// gowt: type MyEnv wrapping Environment[*common.Environment via common.New] using mypkg
+//	// gowt: type Endpoint wrapping Wrapper[*base.Handler] using registry
 //
-// An optional "renaming" clause maps template function names to new names in
-// the generated output:
+// An optional "renaming" clause maps identifiers to new names in the generated
+// output:
 //
-//	// gowt: type MyEnv wrapping Environment[*common.Environment via common.New] renaming New=NewMyEnv
+//	// gowt: type Endpoint wrapping Wrapper[*base.Handler] renaming Describe=Info
 //
 // Multiple renames are comma-separated.  Both clauses may be combined, with
 // "using" preceding "renaming":
 //
-//	// gowt: type MyEnv wrapping Environment[*common.Environment via common.New] using mypkg renaming New=NewMyEnv,Wrap=BuildMyEnv
+//	// gowt: type Endpoint wrapping Wrapper[*base.Handler via base.Create] using registry renaming Describe=Info
 //
 // The template may live in a different package; use its import path or a local
 // alias as the package qualifier:
 //
-//	// gowt: type MyEnv wrapping mypkg.Environment[*common.Environment via common.New]
+//	// gowt: type Service wrapping mypkg.Wrapper[*base.Handler]
 //
 // # Substitution pipeline
 //
@@ -120,16 +120,17 @@
 //
 // Any symbol whose name contains the template type name gets that portion
 // replaced by the generated type name, preserving both prefix and suffix.
-// For example, with template type "Environment" and generated type "MyEnv":
+// For example, with template type "Wrapper" and generated type "Service":
 //
-//	NewEnvironment       → NewMyEnv         (prefix preserved)
-//	EnvironmentConfig    → MyEnvConfig      (suffix preserved)
-//	NewEnvironmentConfig → NewMyEnvConfig   (both preserved)
+//	Wrapper          → Service          (exact match)
+//	NewWrapper       → NewService       (prefix preserved)
+//	WrapperLabel     → ServiceLabel     (suffix preserved)
+//	RegisterWrapper  → RegisterService  (prefix preserved)
 //
-// This applies equally to generic and non-generic functions — for generic
-// functions, the type parameter list is stripped first, then the name is
-// substituted.  Symbols that do not contain the template type name are left
-// unchanged (e.g. "New", "Wrap", "Register").
+// This applies equally to generic functions, non-generic functions, and
+// methods — for generic functions and methods, the type parameter list is
+// stripped first, then the name is substituted.  Symbols that do not contain
+// the template type name are left unchanged (e.g. "Describe", "GetLabel").
 //
 // The naming convention is useful when multiple instantiations of the same
 // template coexist in one package — without it, every instantiation would
@@ -148,6 +149,8 @@
 //
 //	//go:generate go run github.com/mandelsoft/gowrappedtypes
 package main
+
+//go:generate go run github.com/mandelsoft/mdref doc/src .
 
 import (
 	"fmt"
