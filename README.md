@@ -252,13 +252,14 @@ first:
 ## Name conventions
 
 The \*TemplateName\* placeholder applies to top-level symbols: type declarations,
-function names, variable names, and constant names.  When a symbol name in the
-template ends with the template type name, the generator preserves the prefix
-and appends the generated type name instead.  This is the **camelCase-prefix
-convention**:
+function names, variable names, and constant names.  Every occurrence of the
+template type name is replaced by the generated type name.  Additionally, any
+symbol whose name *ends* with the template type name gets the suffix replaced
+while preserving the prefix — the **camelCase-prefix convention**:
 
 | Template symbol | Template type | Generated type | Generated symbol |
 |---|---|---|---|
+| `Environment` | `Environment` | `MyEnv` | `MyEnv` |
 | `NewEnvironment` | `Environment` | `MyEnv` | `NewMyEnv` |
 | `DefaultEnvironment` | `Environment` | `MyEnv` | `DefaultMyEnv` |
 | `WrapEnvironment` | `Environment` | `MyEnv` | `WrapMyEnv` |
