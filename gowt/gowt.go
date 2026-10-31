@@ -71,15 +71,14 @@ func generateInstantiation(info *GoFileInfo, inst InstantiationSpec) (*Generatio
 	}
 
 	// Resolve template package for cross-package instantiation.
-	var tmplImportPath, tmplPkgAlias string
+	// The template package import is not added to the generated file —
+	// it is only needed at generation time to locate the _gowt.go file.
 	if inst.TmplPkg != "" {
-		tmplImportPath, tmplPkgAlias, err = resolveImportRef(info, inst.TmplPkg)
-		if err != nil {
-			tmplImportPath = inst.TmplPkg
-			parts := strings.Split(inst.TmplPkg, "/")
-			tmplPkgAlias = parts[len(parts)-1]
+		// resolveImportRef validates the package reference; we don't need
+		// the import path or alias in the generated output.
+		if _, _, e := resolveImportRef(info, inst.TmplPkg); e != nil {
+			// Fall through: findTemplate will resolve via go list.
 		}
-		_ = tmplPkgAlias // used for cross-package group qualification (future work)
 	}
 
 	// Resolve optional "using" package.
@@ -96,7 +95,7 @@ func generateInstantiation(info *GoFileInfo, inst InstantiationSpec) (*Generatio
 	for _, imp := range gf.Imports {
 		importMap[imp.Path] = imp
 	}
-	for _, p := range []string{baseImportPath, ctorImportPath, tmplImportPath, usingImportPath} {
+	for _, p := range []string{baseImportPath, ctorImportPath, usingImportPath} {
 		if p != "" {
 			if _, exists := importMap[p]; !exists {
 				importMap[p] = ImportSpec{Path: p}
