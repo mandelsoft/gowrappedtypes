@@ -1,5 +1,8 @@
 # gowt - Go Wrapper Types
 
+> This project — code, tests, and documentation — was entirely developed by
+> [Claude Code](https://claude.ai/claude-code) (Anthropic's AI coding agent).
+
 `gowt` is a code generator that produces concrete Go types from parameterized
 `_gowt.go` template files.  It bridges the gap between Go's type-parameter syntax
 and the common pattern of embedding a parametric base type in a struct with
