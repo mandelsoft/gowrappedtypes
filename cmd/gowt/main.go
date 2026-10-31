@@ -112,7 +112,7 @@
 //
 // # Output
 //
-// The generated file is written to <lowercase(GeneratedName)>_gowt.go in the
+// The generated file is written to <lowercase(GeneratedName)>_gowtgen.go in the
 // same directory as the .go file containing the directive.
 //
 // # Usage

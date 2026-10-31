@@ -137,6 +137,6 @@ func generateInstantiation(info *GoFileInfo, inst InstantiationSpec) (*Generatio
 		return nil, err
 	}
 
-	outPath := filepath.Join(info.Dir, strings.ToLower(inst.TypeName)+"_gowt.go")
+	outPath := filepath.Join(info.Dir, strings.ToLower(inst.TypeName)+"_gowtgen.go")
 	return &GenerationResult{Path: outPath, Content: out}, nil
 }
