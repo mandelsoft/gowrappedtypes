@@ -62,6 +62,8 @@ var _ = DescribeTable("gowt golden",
 	Entry("using — PACKAGE. placeholder with using clause", "using"),
 	Entry("fixedfunc — non-generic function with TmplName references", "fixedfunc"),
 	Entry("allfeatures — NEW+PACKAGE. in generic and non-generic functions", "allfeatures"),
+	Entry("defaultvia — via omitted, defaults to BasePkg.New", "defaultvia"),
+	Entry("unqualifiedvia — via with bare function name, uses base package", "unqualifiedvia"),
 )
 
 var _ = Describe("gowt error cases", func() {

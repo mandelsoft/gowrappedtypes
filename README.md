@@ -119,16 +119,16 @@ A template may contain any combination of:
 ## Instantiation directives
 
 Instantiation is triggered by a specially formatted comment in any `.go` file in
-the target package.  The basic form is:
+the target package.  The simplest form is:
 
 ```go
-// gowt: type GeneratedName wrapping TemplateName[BasePkg.BaseType via CtorPkg.CtorFunc]
+// gowt: type GeneratedName wrapping TemplateName[BasePkg.BaseType]
 ```
 
 This tells `gowt` to:
 1. Find a `_gowt.go` file containing a type called `TemplateName`.
 2. Replace the type parameter with `BasePkg.BaseType`.
-3. Replace `NEW` with `CtorPkg.CtorFunc`.
+3. Replace `NEW` with `BasePkg.New` (the default constructor).
 4. Emit the result as a concrete type named `GeneratedName`.
 
 ### Directive syntax
@@ -136,7 +136,7 @@ This tells `gowt` to:
 The full syntax, with all optional clauses, is:
 
 ```
-// gowt: type <Name> wrapping [<TmplPkg>.]<Template>[<BaseType> via <Ctor>] [using <Pkg>] [renaming <Old>=<New>,...]
+// gowt: type <Name> wrapping [<TmplPkg>.]<Template>[<BaseType> [via [<CtorPkg>.]<Ctor>]] [using <Pkg>] [renaming <Old>=<New>,...]
 ```
 
 Each part is described below.
@@ -167,15 +167,22 @@ the `.go` file containing the directive) or **full import paths**:
 
 ### Constructor (`via`)
 
-The `via` clause names the constructor function that `NEW` is replaced with.  It
-must be a qualified name (`Pkg.Func`):
+The optional `via` clause names the constructor function that `NEW` is replaced
+with.  When omitted, it defaults to `New` in the base type's package:
 
 ```go
+// Equivalent forms — all resolve NEW to common.New:
+// gowt: type MyEnv wrapping Environment[*common.Environment]
+// gowt: type MyEnv wrapping Environment[*common.Environment via New]
 // gowt: type MyEnv wrapping Environment[*common.Environment via common.New]
 ```
 
+When `via` names an unqualified function (no package prefix), the base type's
+package is used.  A fully qualified name (`Pkg.Func`) may reference a different
+package than the base type.
+
 In the generated code, every occurrence of `NEW` in the template becomes
-`common.New`.
+the resolved constructor (e.g. `common.New`).
 
 ### Cross-package templates
 
@@ -337,7 +344,7 @@ package composer
 
 //go:generate go run github.com/mandelsoft/gowrappedtypes
 
-// gowt: type Environment wrapping Environment[*github.com/mandelsoft/composer/common.Environment via github.com/mandelsoft/composer/common.New]
+// gowt: type Environment wrapping Environment[*github.com/mandelsoft/composer/common.Environment]
 ```
 
 **Generated output** (`environment_gowtgen.go`):

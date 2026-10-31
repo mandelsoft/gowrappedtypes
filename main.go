@@ -43,11 +43,18 @@
 // Instantiation is triggered by a specially formatted comment in any .go file
 // in the target package:
 //
-//	// gowt: type GeneratedName wrapping [pkg.]TemplateName[BasePkg.BaseType via CtorPkg.CtorFunc]
+//	// gowt: type GeneratedName wrapping [pkg.]TemplateName[BasePkg.BaseType]
+//
+// The "via" clause is optional; when omitted, NEW defaults to BasePkg.New.
+// An unqualified function name uses the base type's package:
+//
+//	// gowt: type MyEnv wrapping Environment[*common.Environment]
+//	// gowt: type MyEnv wrapping Environment[*common.Environment via New]
+//	// gowt: type MyEnv wrapping Environment[*common.Environment via common.New]
 //
 // The base type may be written as a pointer type:
 //
-//	// gowt: type MyEnv wrapping Environment[*common.Environment via common.New]
+//	// gowt: type MyEnv wrapping Environment[*common.Environment]
 //
 // An optional "using" clause names a package whose import is added to the
 // generated file and whose alias replaces the PACKAGE. placeholder in the

@@ -81,10 +81,15 @@ func scanGoFile(fs vfs.FileSystem, path string) (*GoFileInfo, error) {
 
 // parseInstComment tries to parse:
 //
+//	// gowt: type X wrapping [pkg.]Template[BasePkg.BaseType]
+//	// gowt: type X wrapping [pkg.]Template[BasePkg.BaseType via CtorFunc]
 //	// gowt: type X wrapping [pkg.]Template[BasePkg.BaseType via CtorPkg.CtorFunc]
 //	// gowt: type X wrapping [pkg.]Template[BasePkg.BaseType via CtorPkg.CtorFunc] using <pkg>
 //	// gowt: type X wrapping [pkg.]Template[BasePkg.BaseType via CtorPkg.CtorFunc] using <pkg> renaming OldName=NewName,...
 //	// gowt: type X wrapping [pkg.]Template[BasePkg.BaseType via CtorPkg.CtorFunc] renaming OldName=NewName,...
+//
+// When "via" is omitted, the constructor defaults to BasePkg.New.
+// When "via" names an unqualified function (no dot), the base package is used.
 //
 // Returns (spec, true, nil) on a match, (_, false, nil) if not a gowt comment,
 // or (_, _, err) if the comment looks like a gowt directive but is malformed.
@@ -165,13 +170,13 @@ func parseInstComment(text string) (InstantiationSpec, bool, error) {
 		tmplName = tmplRef
 	}
 
-	// Parse typeArg: "BasePkg.BaseType via CtorPkg.CtorFunc"
+	// Parse typeArg: "BasePkg.BaseType [via [CtorPkg.]CtorFunc]"
+	var baseRef, ctorRef string
 	viaParts := strings.SplitN(typeArg, " via ", 2)
-	if len(viaParts) != 2 {
-		return InstantiationSpec{}, false, fmt.Errorf("type %s: type argument must be 'Type via Ctor', got %q", typeName, typeArg)
+	baseRef = strings.TrimSpace(viaParts[0])
+	if len(viaParts) == 2 {
+		ctorRef = strings.TrimSpace(viaParts[1])
 	}
-	baseRef := strings.TrimSpace(viaParts[0])
-	ctorRef := strings.TrimSpace(viaParts[1])
 
 	basePtr := strings.HasPrefix(baseRef, "*")
 	if basePtr {
@@ -181,9 +186,21 @@ func parseInstComment(text string) (InstantiationSpec, bool, error) {
 	if err != nil {
 		return InstantiationSpec{}, false, fmt.Errorf("type %s: base type: %w", typeName, err)
 	}
-	ctorPkg, ctorFunc, err := splitDot(ctorRef)
-	if err != nil {
-		return InstantiationSpec{}, false, fmt.Errorf("type %s: ctor: %w", typeName, err)
+
+	// Resolve constructor: default to basePkg.New when via is omitted;
+	// use basePkg when via names an unqualified function.
+	var ctorPkg, ctorFunc string
+	if ctorRef == "" {
+		ctorPkg = basePkg
+		ctorFunc = "New"
+	} else if strings.Contains(ctorRef, ".") {
+		ctorPkg, ctorFunc, err = splitDot(ctorRef)
+		if err != nil {
+			return InstantiationSpec{}, false, fmt.Errorf("type %s: ctor: %w", typeName, err)
+		}
+	} else {
+		ctorPkg = basePkg
+		ctorFunc = ctorRef
 	}
 
 	return InstantiationSpec{
