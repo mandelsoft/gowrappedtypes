@@ -111,7 +111,19 @@ A template may contain any combination of:
 - **Non-generic functions** — plain functions that reference the template type
   name in their signature or body.  The type name references are substituted,
   but no type parameters are involved.  This is useful for helpers, validators,
-  or registration functions that operate on the concrete type.
+  or registration functions that operate on the concrete type.  All
+  placeholders (`NEW`, `PACKAGE.`, `*TemplateName*`) work identically in
+  non-generic functions — including in parameter types, return types, and
+  function bodies.
+
+  ```go
+  // Non-generic helper — *Template in parameter type is substituted,
+  // but the function name "Wrap" is preserved (no TemplateName substring).
+  func Wrap(v *Template) bool { return v != nil }
+
+  // Non-generic function — PACKAGE. works as a parameter type too.
+  func Register(r PACKAGE.Registry, t *Template) { r.Add(t) }
+  ```
 
 - **Doc comments on declarations** — these are stripped from the generated
   output (they may reference placeholders or the generic syntax that would be
@@ -203,8 +215,9 @@ the template:
 
 | Template source | With `using extras` | Without `using` |
 |---|---|---|
-| `PACKAGE.Extras`      | `extras.Extras` | `Extras` |
+| `PACKAGE.Extras`       | `extras.Extras`       | `Extras` |
 | `PACKAGE.NewExtras(x)` | `extras.NewExtras(x)` | `NewExtras(x)` |
+| `PACKAGE.Registry` (parameter type) | `extras.Registry` | `Registry` |
 
 When `using` is **omitted**, `PACKAGE.` is removed entirely, leaving bare
 unqualified identifiers.  This is the correct behaviour when the referenced
@@ -229,6 +242,12 @@ Multiple renames are comma-separated:
 
 Renames apply to all word-boundary occurrences of the old name — both the
 declaration itself and any call sites within the template body.
+
+> **When is `renaming` needed?**  The `*TemplateName*` convention only renames
+> symbols that *contain* the template type name.  A function called simply `New`
+> does not contain `Environment`, so it stays `New` after instantiation.  When
+> two instantiations coexist in the same package, both would produce a `func New`
+> — use `renaming New=NewMyEnv` to disambiguate.
 
 Both `using` and `renaming` can be combined.  When present, `using` must come
 first:
@@ -263,7 +282,19 @@ type name, preserving both prefix and suffix:
 | `EnvironmentConfig` | `Environment` | `MyEnv` | `MyEnvConfig` |
 | `NewEnvironmentConfig` | `Environment` | `MyEnv` | `NewMyEnvConfig` |
 
-Symbols that do **not** end with the template type name are left unchanged
+The substitution applies equally to generic and non-generic functions.  For
+generic functions, the type parameter list is stripped first (step 2), then the
+name is substituted (step 5):
+
+```go
+// Template:
+func TemplateConfig[T any](t *Template[T]) int { return t.Extra }
+
+// Generated (Template→Concrete):
+func ConcreteConfig(t *Concrete) int { return t.Extra }
+```
+
+Symbols that do **not** contain the template type name are left unchanged
 (unless they match an explicit rename):
 
 | Template symbol | Template type | Generated symbol |
@@ -275,10 +306,10 @@ Symbols that do **not** end with the template type name are left unchanged
 Qualified references (the right-hand side of `pkg.Name`, e.g. `epi.Environment`)
 are never renamed, even if they happen to match the template type name.
 
-The camelCase-prefix convention is useful when multiple instantiations of the
-same template coexist in one package — without it, every instantiation would
-produce identically named symbols, causing compile errors.  For
-single-instantiation cases, the simpler `func New` style works fine.
+The naming convention is useful when multiple instantiations of the same
+template coexist in one package — without it, every instantiation would produce
+identically named symbols, causing compile errors.  For single-instantiation
+cases, the simpler `func New` style works fine.
 
 ## Substitution pipeline
 
