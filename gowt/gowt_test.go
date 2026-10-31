@@ -61,6 +61,7 @@ var _ = Describe("gowt", func() {
 		Entry("defaultvia — via omitted, defaults to BasePkg.New", "defaultvia"),
 		Entry("unqualifiedvia — via with bare function name, uses base package", "unqualifiedvia"),
 		Entry("suffix — prefix and suffix name substitution", "suffix"),
+		Entry("crosspkg — template declares different package than directive", "crosspkg"),
 	)
 
 	It("rejects PACKAGE.NEW — contradictory via/using packages", func() {
