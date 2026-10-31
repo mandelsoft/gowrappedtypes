@@ -286,7 +286,7 @@ steps 3-7 use **post-order** (children before parent).
 Each instantiation directive produces one file:
 
 ```
-<lowercase(GeneratedName)>_gowt.go
+<lowercase(GeneratedName)>_gowtgen.go
 ```
 
 in the same directory as the `.go` file containing the directive.  The file
@@ -304,7 +304,7 @@ third-party imports.
 
 ## Complete example
 
-**Template** (`environment_gowtgen.go`):
+**Template** (`environment_gowt.go`):
 ```go
 //go:build ignore
 
