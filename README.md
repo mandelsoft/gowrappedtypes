@@ -292,8 +292,7 @@ first:
 
 ## Name conventions
 
-The `*TemplateName*` placeholder applies to top-level symbols: type declarations,
-function names, variable names, and constant names.  Any symbol whose name
+The `*TemplateName*` placeholder applies to all identifiers in the template.  Any identifier whose name
 contains the template type name gets that portion replaced by the generated
 type name, preserving both prefix and suffix:
 
@@ -336,17 +335,19 @@ cases, the simpler `func New` style works fine.
 ## Substitution pipeline
 
 For each declaration in the template, the following substitutions are applied in
-order.  Steps 0-2 use **pre-order** AST traversal (parent before children);
-steps 3-7 use **post-order** (children before parent).
+order.  Steps 1-2 use **pre-order** AST traversal (parent before children);
+steps 0 and 3-7 use **post-order** (children before parent).  Step 0 is
+numbered first because explicit renames take the highest priority when an
+identifier matches both a rename and another rule.
 
 | Step | Pattern | Replacement | Notes |
 |---|---|---|---|
-| 0 | `OldName` (from `renaming`) | `NewName` | Highest priority; applies everywhere. |
-| 1 | `*TemplateName*[...]` | `*GeneratedName*` | Type expressions with type-argument lists.  Prefix and suffix are preserved. |
-| 2 | `func F[TypeParam ...]` | `func F` | Strips type parameters from function and type declarations. |
+| 0 | `OldName` (from `renaming`) | `NewName` | Highest priority; applies everywhere (post-order). |
+| 1 | `*TemplateName*[...]` | `*GeneratedName*` | Type expressions with type-argument lists.  Prefix and suffix are preserved (pre-order). |
+| 2 | `func F[TypeParam ...]` | `func F` | Strips type parameters from function and type declarations (pre-order). |
 | 3 | `TypeParam:` (in struct literal key) | `BaseType:` | Unqualified base type name only (Go struct literal keys must not be pointer-qualified). |
 | 4 | `TypeParam` (elsewhere) | `[*]BasePkg.BaseType` | Full qualified type; `*` added when the base type is a pointer. |
-| 5 | bare `*TemplateName*` | `*GeneratedName*` | Top-level symbols (types, functions, variables, constants).  Prefix and suffix preserved.  Qualified references (`pkg.Name`) are left untouched. |
+| 5 | bare `*TemplateName*` | `*GeneratedName*` | All identifiers containing the template type name.  Prefix and suffix preserved.  Qualified references (`pkg.Name`) are left untouched. |
 | 6 | `NEW` | `CtorPkg.CtorFunc` | Constructor placeholder. |
 | 7 | `PACKAGE.X` | `UsingAlias.X` or `X` | Package placeholder.  When no `using` clause, the qualifier is removed. |
 

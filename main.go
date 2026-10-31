@@ -24,7 +24,7 @@
 // Three special identifiers are recognised anywhere in a template:
 //
 //   - NEW is replaced by the constructor named in the "via" clause of the
-//     instantiation directive.
+//     instantiation directive (defaults to BasePkg.New when "via" is omitted).
 //   - *TemplateName* — any symbol containing the template type name gets that
 //     portion replaced by the generated type name, preserving both prefix and
 //     suffix; see "Name conventions" below.
@@ -95,22 +95,24 @@
 // # Substitution pipeline
 //
 // For each declaration in the template the following substitutions are applied
-// in order:
+// in order.  Steps 1-2 run pre-order (parent before children); steps 0 and
+// 3-7 run post-order (children before parent).  Step 0 is numbered first
+// because explicit renames take the highest priority.
 //
-//  0. Explicit renames (from the "renaming" clause): every word-boundary
-//     occurrence of OldName is replaced by NewName, covering both the
-//     declaration and any call sites within the template body.
+//  0. Explicit renames (from the "renaming" clause): OldName → NewName for
+//     every matching identifier (post-order).
 //  1. [prefix]*TemplateName*[suffix][...] → [prefix]*GeneratedName*[suffix]
-//     (type expressions with type-argument lists; both prefix and suffix around
-//     the template name are preserved — see "Name conventions").
+//     (type expressions with type-argument lists; prefix and suffix around
+//     the template name are preserved; pre-order).
 //  2. func F[TypeParam ...] → func F  (removes type parameters from function
-//     signatures).
-//  3. TypeParam: → BaseType:  (struct-literal field keys; must precede step 4).
+//     signatures; pre-order).
+//  3. TypeParam: → BaseType:  (struct-literal field keys).
 //  4. TypeParam → [*]BasePkg.BaseType  (all remaining occurrences in type
 //     expressions; the "*" prefix is added when the instantiation uses a
 //     pointer base type).
-//  5. Bare *TemplateName* → *GeneratedName*  (references without type-argument
-//     lists, with the same prefix/suffix preservation as step 1).
+//  5. Bare *TemplateName* → *GeneratedName*  (all identifiers containing the
+//     template name, with the same prefix/suffix preservation as step 1;
+//     qualified references like pkg.Name are left untouched).
 //  6. NEW → CtorPkg.CtorFunc.
 //  7. PACKAGE. → usingAlias. (named package) or "" (local package — no qualifier needed in Go).
 //

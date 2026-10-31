@@ -72,7 +72,7 @@ func packageDir(importPath string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-// resolveImportRef resolves a base-type package reference to (importPath, localAlias).
+// resolveImportRef resolves a package reference to (importPath, localAlias).
 //
 //   - Full import path (contains "/"): used directly; localAlias = last path element.
 //   - Short alias: looked up in info.Imports, then in all .go files in the package dir
