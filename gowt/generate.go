@@ -74,11 +74,11 @@ type SubstParams struct {
 // Substitutions, in order:
 //
 //  0. Explicit renames from the "renaming" clause (all word-boundary occurrences).
-//  1. TmplName[...] (IndexExpr/IndexListExpr with TmplName base) → TargetName  (pre-order).
+//  1. *TmplName*[...] (IndexExpr/IndexListExpr containing TmplName) → *TargetName*  (pre-order).
 //  2. TypeParams stripped from type and func declarations                        (pre-order).
 //  3. TypeParam in KeyValueExpr key position → unqualified BaseType             (post-order).
 //  4. TypeParam in all other positions → [*]BasePkg.BaseType                    (post-order).
-//  5. Bare TmplName (with optional camelCase prefix) → TargetName              (post-order).
+//  5. Bare *TmplName* (with optional prefix/suffix) → *TargetName*             (post-order).
 //     Idents in Sel position of a SelectorExpr (e.g. epi.Environment) are left
 //     untouched, which is more precise than the former regex approach.
 //  6. NEW → CtorPkg.CtorFunc                                                    (post-order).
@@ -117,13 +117,17 @@ func substituteDecls(gf *GowtFile, p SubstParams) ([]string, error) {
 			gf.Fset.Position(packageNEWPos))
 	}
 
-	// tmplNameSuffix returns (prefix, true) if name ends with TmplName,
-	// or ("", false) otherwise.  A zero-length TmplName never matches.
-	tmplNameSuffix := func(name string) (string, bool) {
-		if p.TmplName == "" || !strings.HasSuffix(name, p.TmplName) {
-			return "", false
+	// tmplNameMatch checks whether name contains TmplName and returns the
+	// prefix and suffix around it.  A zero-length TmplName never matches.
+	tmplNameMatch := func(name string) (prefix, suffix string, ok bool) {
+		if p.TmplName == "" {
+			return "", "", false
 		}
-		return name[:len(name)-len(p.TmplName)], true
+		i := strings.Index(name, p.TmplName)
+		if i < 0 {
+			return "", "", false
+		}
+		return name[:i], name[i+len(p.TmplName):], true
 	}
 
 	astutil.Apply(gf.File,
@@ -147,8 +151,8 @@ func substituteDecls(gf *GowtFile, p SubstParams) ([]string, error) {
 				if !ok {
 					return true
 				}
-				if prefix, ok := tmplNameSuffix(id.Name); ok {
-					c.Replace(&ast.Ident{NamePos: id.NamePos, Name: prefix + p.TargetName})
+				if prefix, suffix, ok := tmplNameMatch(id.Name); ok {
+					c.Replace(&ast.Ident{NamePos: id.NamePos, Name: prefix + p.TargetName + suffix})
 					return false // children collapsed
 				}
 			case *ast.IndexListExpr:
@@ -156,8 +160,8 @@ func substituteDecls(gf *GowtFile, p SubstParams) ([]string, error) {
 				if !ok {
 					return true
 				}
-				if prefix, ok := tmplNameSuffix(id.Name); ok {
-					c.Replace(&ast.Ident{NamePos: id.NamePos, Name: prefix + p.TargetName})
+				if prefix, suffix, ok := tmplNameMatch(id.Name); ok {
+					c.Replace(&ast.Ident{NamePos: id.NamePos, Name: prefix + p.TargetName + suffix})
 					return false
 				}
 			}
@@ -197,15 +201,15 @@ func substituteDecls(gf *GowtFile, p SubstParams) ([]string, error) {
 					return true
 				}
 
-				// Step 5: bare TmplName (with optional camelCase prefix) → TargetName.
+				// Step 5: bare TmplName (with optional prefix/suffix) → TargetName.
 				// Skip idents in Sel position of a SelectorExpr: those are the
 				// right-hand side of a qualified name (pkg.TypeName) and must not
 				// be renamed even if they happen to share the TmplName.
-				if prefix, ok := tmplNameSuffix(n.Name); ok {
+				if prefix, suffix, ok := tmplNameMatch(n.Name); ok {
 					if _, isSel := c.Parent().(*ast.SelectorExpr); isSel && c.Name() == "Sel" {
 						return true
 					}
-					c.Replace(&ast.Ident{NamePos: n.NamePos, Name: prefix + p.TargetName})
+					c.Replace(&ast.Ident{NamePos: n.NamePos, Name: prefix + p.TargetName + suffix})
 				}
 
 			case *ast.SelectorExpr:

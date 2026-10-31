@@ -64,6 +64,7 @@ var _ = DescribeTable("gowt golden",
 	Entry("allfeatures — NEW+PACKAGE. in generic and non-generic functions", "allfeatures"),
 	Entry("defaultvia — via omitted, defaults to BasePkg.New", "defaultvia"),
 	Entry("unqualifiedvia — via with bare function name, uses base package", "unqualifiedvia"),
+	Entry("suffix — prefix and suffix name substitution", "suffix"),
 )
 
 var _ = Describe("gowt error cases", func() {
