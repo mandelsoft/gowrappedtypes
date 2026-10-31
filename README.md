@@ -59,7 +59,7 @@ Three special identifiers are recognised anywhere in a template:
 |---|---|
 | `NEW`        | Replaced by the constructor from the `via` clause (or `BasePkg.New` by default). |
 | `PACKAGE.`   | Replaced by the alias of the package named in the `using` clause, or removed entirely when no `using` clause is present (leaving a bare, unqualified identifier suitable for the local package). |
-| *TemplateName* | The template type name itself (and any camelCase-prefixed form of it) is replaced by the generated type name.  See [Name conventions](#name-conventions). |
+| \*TemplateName\* | The template type name itself (and any camelCase-prefixed form of it) is replaced by the generated type name in top-level symbols — types, functions, variables, and constants.  See [Name conventions](#name-conventions). |
 
 > **Note:** `PACKAGE.NEW` is not valid.  `NEW` refers to the constructor
 > specified by the `via` clause, while `PACKAGE.` refers to the package
@@ -251,28 +251,33 @@ first:
 
 ## Name conventions
 
-When a function name in the template ends with the template type name, the
-generator preserves the prefix and appends the generated type name instead.
-This is the **camelCase-prefix convention**:
+The \*TemplateName\* placeholder applies to top-level symbols: type declarations,
+function names, variable names, and constant names.  When a symbol name in the
+template ends with the template type name, the generator preserves the prefix
+and appends the generated type name instead.  This is the **camelCase-prefix
+convention**:
 
-| Template function | Template type | Generated type | Generated function |
+| Template symbol | Template type | Generated type | Generated symbol |
 |---|---|---|---|
 | `NewEnvironment` | `Environment` | `MyEnv` | `NewMyEnv` |
 | `DefaultEnvironment` | `Environment` | `MyEnv` | `DefaultMyEnv` |
 | `WrapEnvironment` | `Environment` | `MyEnv` | `WrapMyEnv` |
 
-Functions that do **not** end with the template type name are left unchanged
+Symbols that do **not** end with the template type name are left unchanged
 (unless they match an explicit rename):
 
-| Template function | Template type | Generated function |
+| Template symbol | Template type | Generated symbol |
 |---|---|---|
 | `New`      | `Environment` | `New` (unchanged) |
 | `Wrap`     | `Environment` | `Wrap` (unchanged) |
 | `Register` | `Environment` | `Register` (unchanged) |
 
+Qualified references (the right-hand side of `pkg.Name`, e.g. `epi.Environment`)
+are never renamed, even if they happen to match the template type name.
+
 The camelCase-prefix convention is useful when multiple instantiations of the
 same template coexist in one package — without it, every instantiation would
-produce identically named functions, causing compile errors.  For
+produce identically named symbols, causing compile errors.  For
 single-instantiation cases, the simpler `func New` style works fine.
 
 ## Substitution pipeline
@@ -284,11 +289,11 @@ steps 3-7 use **post-order** (children before parent).
 | Step | Pattern | Replacement | Notes |
 |---|---|---|---|
 | 0 | `OldName` (from `renaming`) | `NewName` | Highest priority; applies everywhere. |
-| 1 | `[prefix]TemplateName[...]` | `[prefix]GeneratedName` | Type expressions with type-argument lists.  The prefix is preserved (camelCase convention). |
+| 1 | `[prefix]*TemplateName*[...]` | `[prefix]GeneratedName` | Type expressions with type-argument lists.  The prefix is preserved (camelCase convention). |
 | 2 | `func F[TypeParam ...]` | `func F` | Strips type parameters from function and type declarations. |
 | 3 | `TypeParam:` (in struct literal key) | `BaseType:` | Unqualified base type name only (Go struct literal keys must not be pointer-qualified). |
 | 4 | `TypeParam` (elsewhere) | `[*]BasePkg.BaseType` | Full qualified type; `*` added when the base type is a pointer. |
-| 5 | bare `TemplateName` | `GeneratedName` | References without type-argument lists.  camelCase prefix preserved.  Idents in `Sel` position of a `SelectorExpr` (e.g., `epi.Environment`) are left untouched. |
+| 5 | bare `*TemplateName*` | `GeneratedName` | Top-level symbols (types, functions, variables, constants).  camelCase prefix preserved.  Qualified references (`pkg.Name`) are left untouched. |
 | 6 | `NEW` | `CtorPkg.CtorFunc` | Constructor placeholder. |
 | 7 | `PACKAGE.X` | `UsingAlias.X` or `X` | Package placeholder.  When no `using` clause, the qualifier is removed. |
 
