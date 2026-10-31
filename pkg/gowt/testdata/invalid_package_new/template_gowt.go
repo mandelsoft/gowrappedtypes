@@ -1,3 +1,5 @@
+//go:build ignore
+
 package testpkg
 
 type Template[T any] struct {

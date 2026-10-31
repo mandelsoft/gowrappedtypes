@@ -23,7 +23,7 @@ type GoFileInfo struct {
 type InstantiationSpec struct {
 	TypeName     string            // X  — the generated concrete type name
 	TmplPkg      string            // package alias/path for the template (empty = current package)
-	TmplName     string            // W  — the template type name in the .gowt file
+	TmplName     string            // W  — the template type name in the _gowt.go file
 	BasePtr      bool              // true when the base type is written as *Pkg.Type
 	BasePkgAlias string            // local alias of the base type's package (e.g. "common")
 	BaseTypeName string            // unqualified base type name (e.g. "Environment")

@@ -11,8 +11,12 @@ import (
 	"github.com/mandelsoft/vfs/pkg/vfs"
 )
 
-// findTemplate locates the .gowt file that contains a type named inst.TmplName,
+// findTemplate locates the _gowt.go file that contains a type named inst.TmplName,
 // parses it, and returns the path, the file, and the matching declaration.
+//
+// Template files use a _gowt.go suffix and carry a "//go:build ignore" constraint
+// so that the Go toolchain excludes them from normal builds but still includes them
+// in module downloads.
 //
 // When inst.TmplPkg is empty the template is looked up in gofileDir via fs.
 // Otherwise inst.TmplPkg is resolved to a directory via go list (OS-level),
@@ -37,7 +41,7 @@ func findTemplate(fs vfs.FileSystem, gofileDir string, inst InstantiationSpec) (
 		return "", nil, nil, fmt.Errorf("reading %s: %w", dir, err)
 	}
 	for _, e := range entries {
-		if !strings.HasSuffix(e.Name(), ".gowt") {
+		if !strings.HasSuffix(e.Name(), "_gowt.go") {
 			continue
 		}
 		path := filepath.Join(dir, e.Name())
@@ -55,7 +59,7 @@ func findTemplate(fs vfs.FileSystem, gofileDir string, inst InstantiationSpec) (
 			}
 		}
 	}
-	return "", nil, nil, fmt.Errorf("template type %q not found in any .gowt file under %s",
+	return "", nil, nil, fmt.Errorf("template type %q not found in any _gowt.go file under %s",
 		inst.TmplName, dir)
 }
 

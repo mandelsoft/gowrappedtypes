@@ -1,10 +1,12 @@
-// gowt generates concrete Go types from parameterized .gowt template files.
+// gowt generates concrete Go types from parameterized _gowt.go template files.
 //
 // # Template files
 //
-// A .gowt file is written in regular Go generics syntax and is parseable by
-// go/parser.  It defines a struct type with a single type parameter that
-// represents the embedded base type, and optionally methods on that type.
+// A _gowt.go file is written in regular Go generics syntax and is parseable by
+// go/parser.  It carries a "//go:build ignore" constraint so the Go toolchain
+// excludes it from normal builds but still includes it in module downloads.
+// It defines a struct type with a single type parameter that represents the
+// embedded base type, and optionally methods on that type.
 //
 // Three special identifiers are recognised anywhere in a template:
 //
@@ -16,7 +18,7 @@
 //     of the package named in the "using" clause, or removed entirely when no
 //     "using" clause is present; see "Substitution pipeline" step 7.
 //
-// Example template (environment.gowt):
+// Example template (environment_gowt.go):
 //
 //	package mypkg
 //

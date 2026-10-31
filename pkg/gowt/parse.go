@@ -15,14 +15,14 @@ type ImportSpec struct {
 	Path  string // import path without quotes
 }
 
-// GowtDecl describes one parameterized type template found in a .gowt file.
+// GowtDecl describes one parameterized type template found in a _gowt.go file.
 type GowtDecl struct {
 	Name       string // template type name (e.g. "Environment")
 	TypeParam  string // type parameter name (e.g. "Base")
 	Constraint string // constraint expression text (e.g. "epi.Environment")
 }
 
-// GowtFile is the result of parsing a .gowt source file.
+// GowtFile is the result of parsing a _gowt.go template file.
 type GowtFile struct {
 	Filename string
 	Package  string
@@ -32,8 +32,8 @@ type GowtFile struct {
 	Fset     *token.FileSet // position information for File
 }
 
-// parseGowtFile parses a .gowt file (written in Go generics syntax) and returns
-// the structured representation together with the parsed AST.
+// parseGowtFile parses a _gowt.go template file (written in Go generics syntax)
+// and returns the structured representation together with the parsed AST.
 func parseGowtFile(filename, src string) (*GowtFile, error) {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, filename, src, parser.ParseComments)

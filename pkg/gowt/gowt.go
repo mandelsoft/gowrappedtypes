@@ -52,7 +52,7 @@ func ProcessGoFile(fs vfs.FileSystem, path string) error {
 // instantiation directive and returns the intended output path together with
 // the gofmt-formatted source.  It does not write anything to disk.
 func generateInstantiation(info *GoFileInfo, inst InstantiationSpec) (*GenerationResult, error) {
-	// Locate the .gowt template.
+	// Locate the _gowt.go template.
 	tmplPath, gf, decl, err := findTemplate(info.FS, info.Dir, inst)
 	if err != nil {
 		return nil, err

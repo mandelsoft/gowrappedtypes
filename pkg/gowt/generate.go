@@ -18,7 +18,7 @@ import (
 type genContext struct {
 	Package    string
 	Imports    []ImportSpec
-	SourceFile string   // base name of the .gowt file
+	SourceFile string   // base name of the _gowt.go template file
 	Decls      []string // substituted declaration source texts, in order
 }
 

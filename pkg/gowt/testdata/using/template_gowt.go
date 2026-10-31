@@ -1,3 +1,5 @@
+//go:build ignore
+
 package testpkg
 
 // Template[T] embeds T and an Extras value from the "using" package.

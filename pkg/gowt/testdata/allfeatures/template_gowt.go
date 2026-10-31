@@ -1,3 +1,5 @@
+//go:build ignore
+
 package testpkg
 
 // Template[T] is a parameterized wrapper.
