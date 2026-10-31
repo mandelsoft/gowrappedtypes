@@ -1,0 +1,22 @@
+package testpkg
+
+// Template[T] is a parameterized wrapper that embeds the base type T.
+type Template[T any] struct {
+	T
+}
+
+// NewTemplate creates a Template wrapping a T produced by NEW.
+func NewTemplate[T any](x int) (*Template[T], error) {
+	v, err := NEW(x)
+	if err != nil {
+		return nil, err
+	}
+	return &Template[T]{T: v}, nil
+}
+
+// Wrap is a non-generic helper whose name has no relation to the template type.
+// The function name must be preserved verbatim; only the *Template type
+// reference inside the signature is substituted.
+func Wrap(v *Template) bool {
+	return v != nil
+}

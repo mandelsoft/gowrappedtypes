@@ -1,0 +1,37 @@
+package testpkg
+
+// Template[T] is a parameterized wrapper.
+// Struct field type: PACKAGE.Extras tests PACKAGE. in a type position.
+type Template[T any] struct {
+	T
+	Extras PACKAGE.Extras
+}
+
+// NewTemplate is a generic constructor: tests NEW + PACKAGE. in a generic func,
+// and the camelCase-prefix convention (NewTemplate → NewConcrete).
+func NewTemplate[T any](name string) (*Template[T], error) {
+	v, err := NEW(name)
+	if err != nil {
+		return nil, err
+	}
+	return &Template[T]{T: v, Extras: *PACKAGE.NewExtras(name)}, nil
+}
+
+// DefaultTemplate is a non-generic function whose name carries the template
+// suffix (prefix "Default" is preserved → DefaultConcrete).
+// Tests: NEW in a non-generic func body, PACKAGE. in a non-generic func body,
+// TmplName in return type, TypeParam as struct-literal key.
+func DefaultTemplate(name string) (*Template, error) {
+	v, err := NEW(name)
+	if err != nil {
+		return nil, err
+	}
+	return &Template{T: v, Extras: *PACKAGE.NewExtras(name)}, nil
+}
+
+// Register is a non-generic function whose name has no relation to the template
+// type (name is preserved verbatim).
+// Tests: PACKAGE. as a parameter type, TmplName as a parameter type.
+func Register(r PACKAGE.Registry, t *Template) {
+	r.Add(t)
+}

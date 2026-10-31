@@ -1,0 +1,13 @@
+package testpkg
+
+type Template[T any] struct {
+	T
+}
+
+func New[T any](name string) (*Template[T], error) {
+	v, err := PACKAGE.NEW(name)
+	if err != nil {
+		return nil, err
+	}
+	return &Template[T]{T: v}, nil
+}

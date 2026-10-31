@@ -1,0 +1,18 @@
+package testpkg
+
+// Template[T] embeds T and an Extras value from the "using" package.
+// PACKAGE. is replaced by the alias named in the "using" clause.
+type Template[T any] struct {
+	T
+	Extras PACKAGE.Extras
+}
+
+// New creates a Template wrapping a T produced by NEW.
+// The Extras field is initialised via PACKAGE.NewExtras.
+func New[T any](name string) (*Template[T], error) {
+	v, err := NEW(name)
+	if err != nil {
+		return nil, err
+	}
+	return &Template[T]{T: v, Extras: *PACKAGE.NewExtras(name)}, nil
+}
