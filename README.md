@@ -51,11 +51,13 @@ embedded base type, together with any number of functions (generic or
 non-generic) that operate on that type.  Every template must start with
 `//go:build ignore` so the Go toolchain skips it during normal builds.
 
+### Placeholders
+
 Three special identifiers are recognised anywhere in a template:
 
 | Placeholder | Meaning |
 |---|---|
-| `NEW`        | Replaced by the constructor named in the `via` clause of the instantiation directive. |
+| `NEW`        | Replaced by the constructor from the `via` clause (or `BasePkg.New` by default). |
 | `PACKAGE.`   | Replaced by the alias of the package named in the `using` clause, or removed entirely when no `using` clause is present (leaving a bare, unqualified identifier suitable for the local package). |
 | *TemplateName* | The template type name itself (and any camelCase-prefixed form of it) is replaced by the generated type name.  See [Name conventions](#name-conventions). |
 
@@ -144,11 +146,7 @@ Each part is described below.
 ### Base type
 
 The base type is written as `Pkg.Type` inside the brackets.  It may be a
-pointer type:
-
-```go
-// gowt: type MyEnv wrapping Environment[*common.Environment via common.New]
-```
+pointer type (`*Pkg.Type`).
 
 When the base type is a pointer, the generated struct embeds `*Pkg.Type` (with
 the star), but struct-literal field keys still use the unqualified type name
@@ -159,30 +157,27 @@ the `.go` file containing the directive) or **full import paths**:
 
 ```go
 // Short alias — "common" is looked up in the file's imports:
-// gowt: type MyEnv wrapping Environment[*common.Environment via common.New]
+// gowt: type MyEnv wrapping Environment[*common.Environment]
 
 // Full import path — resolved directly, last path element becomes the alias:
-// gowt: type MyEnv wrapping Environment[*github.com/mandelsoft/composer/common.Environment via github.com/mandelsoft/composer/common.New]
+// gowt: type MyEnv wrapping Environment[*github.com/mandelsoft/composer/common.Environment]
 ```
 
 ### Constructor (`via`)
 
 The optional `via` clause names the constructor function that `NEW` is replaced
-with.  When omitted, it defaults to `New` in the base type's package:
+with.  It supports three forms:
 
-```go
-// Equivalent forms — all resolve NEW to common.New:
-// gowt: type MyEnv wrapping Environment[*common.Environment]
-// gowt: type MyEnv wrapping Environment[*common.Environment via New]
-// gowt: type MyEnv wrapping Environment[*common.Environment via common.New]
-```
+| Directive | `NEW` resolves to | Notes |
+|---|---|---|
+| `Template[base.Base]` | `base.New` | Default: `New` in the base type's package |
+| `Template[base.Base via Create]` | `base.Create` | Unqualified: function in the base type's package |
+| `Template[base.Base via other.Create]` | `other.Create` | Fully qualified: explicit package |
 
-When `via` names an unqualified function (no package prefix), the base type's
+When `via` is omitted, the constructor defaults to `New` in the base type's
+package.  When `via` names an unqualified function (no dot), the base type's
 package is used.  A fully qualified name (`Pkg.Func`) may reference a different
 package than the base type.
-
-In the generated code, every occurrence of `NEW` in the template becomes
-the resolved constructor (e.g. `common.New`).
 
 ### Cross-package templates
 
@@ -190,7 +185,7 @@ The template may live in a different package.  Prefix the template name with the
 package path or alias:
 
 ```go
-// gowt: type MyEnv wrapping mypkg.Environment[*common.Environment via common.New]
+// gowt: type MyEnv wrapping mypkg.Environment[*common.Environment]
 ```
 
 The generator uses `go list` to resolve the package to a directory and searches
@@ -203,20 +198,17 @@ generated file and whose alias replaces the `PACKAGE.` placeholder throughout
 the template:
 
 ```go
-// gowt: type MyEnv wrapping Environment[*common.Environment via common.New] using github.com/example/extras
+// gowt: type MyEnv wrapping Environment[*common.Environment] using github.com/example/extras
 ```
-
-In the template, `PACKAGE.Extras` becomes `extras.Extras`, and
-`PACKAGE.NewExtras(x)` becomes `extras.NewExtras(x)`.
-
-When `using` is **omitted**, `PACKAGE.` is removed entirely, leaving bare
-unqualified identifiers.  This is the correct behaviour when the referenced
-types and functions are in the same package as the generated code:
 
 | Template source | With `using extras` | Without `using` |
 |---|---|---|
 | `PACKAGE.Extras`      | `extras.Extras` | `Extras` |
 | `PACKAGE.NewExtras(x)` | `extras.NewExtras(x)` | `NewExtras(x)` |
+
+When `using` is **omitted**, `PACKAGE.` is removed entirely, leaving bare
+unqualified identifiers.  This is the correct behaviour when the referenced
+types and functions are in the same package as the generated code.
 
 ### The `renaming` clause
 
@@ -226,7 +218,7 @@ uses a generic name like `New` but you need a distinct name in the target
 package (e.g., because multiple instantiations coexist):
 
 ```go
-// gowt: type MyEnv wrapping Environment[*common.Environment via common.New] renaming New=NewMyEnv
+// gowt: type MyEnv wrapping Environment[*common.Environment] renaming New=NewMyEnv
 ```
 
 Multiple renames are comma-separated:
@@ -242,8 +234,20 @@ Both `using` and `renaming` can be combined.  When present, `using` must come
 first:
 
 ```go
-// gowt: type MyEnv wrapping Environment[*common.Environment via common.New] using mypkg renaming New=NewMyEnv
+// gowt: type MyEnv wrapping Environment[*common.Environment] using mypkg renaming New=NewMyEnv
 ```
+
+### Directive examples at a glance
+
+| Directive | Effect |
+|---|---|
+| `Template[base.Base]` | Simplest form; constructor defaults to `base.New` |
+| `Template[*base.Base]` | Pointer base type; embeds `*base.Base` |
+| `Template[base.Base via Create]` | Custom constructor `base.Create` |
+| `Template[base.Base via other.Create]` | Constructor from a different package |
+| `Template[base.Base] using extras` | `PACKAGE.X` becomes `extras.X` |
+| `Template[base.Base] renaming New=NewMyEnv` | Rename `New` to `NewMyEnv` in output |
+| `pkg.Template[base.Base]` | Template from another package |
 
 ## Name conventions
 
@@ -257,8 +261,8 @@ This is the **camelCase-prefix convention**:
 | `DefaultEnvironment` | `Environment` | `MyEnv` | `DefaultMyEnv` |
 | `WrapEnvironment` | `Environment` | `MyEnv` | `WrapMyEnv` |
 
-This convention is entirely optional.  If a function name does not end with the
-template type name, it is left unchanged (unless it matches an explicit rename):
+Functions that do **not** end with the template type name are left unchanged
+(unless they match an explicit rename):
 
 | Template function | Template type | Generated function |
 |---|---|---|
@@ -381,5 +385,5 @@ Note how every placeholder was resolved:
 - The type parameter `Base` became `*common.Environment` (pointer base type).
 - `Environment[Base]` in type expressions became the bare `Environment`.
 - `Base:` in the struct literal became `Environment:` (the unqualified base type name).
-- `NEW(e)` became `common.New(e)`.
-- `PACKAGE.NewGroup(e)` became `NewGroup(e)` (no `using` clause, so the qualifier was removed — `NewGroup` lives in the local package).
+- `NEW(e)` became `common.New(e)` (no `via` clause — defaults to `New` in the base package).
+- `PACKAGE.NewGroup(e)` became `NewGroup(e)` (no `using` clause — qualifier removed, `NewGroup` lives in the local package).
