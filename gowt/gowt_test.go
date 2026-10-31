@@ -9,7 +9,7 @@ import (
 	. "github.com/mandelsoft/composer/testenv"
 	"github.com/mandelsoft/vfs/pkg/vfs"
 
-	. "github.com/mandelsoft/gowrappedtypes/pkg/gowt"
+	. "github.com/mandelsoft/gowrappedtypes/gowt"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"

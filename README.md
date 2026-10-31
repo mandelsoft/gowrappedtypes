@@ -34,10 +34,10 @@ alongside your sources.
 
 ```bash
 # Explicitly:
-go run github.com/mandelsoft/gowrappedtypes/cmd/gowt env.go
+go run github.com/mandelsoft/gowrappedtypes env.go
 
 # Or via go:generate (place this in the .go file with the directive):
-//go:generate go run github.com/mandelsoft/gowrappedtypes/cmd/gowt
+//go:generate go run github.com/mandelsoft/gowrappedtypes
 ```
 
 The generated file is written to `<lowercase(TypeName)>_gowtgen.go` in the same
@@ -335,7 +335,7 @@ func New[Base epi.Environment](opts ...epi.Option) (*Environment[Base], error) {
 ```go
 package composer
 
-//go:generate go run github.com/mandelsoft/gowrappedtypes/cmd/gowt
+//go:generate go run github.com/mandelsoft/gowrappedtypes
 
 // gowt: type Environment wrapping Environment[*github.com/mandelsoft/composer/common.Environment via github.com/mandelsoft/composer/common.New]
 ```

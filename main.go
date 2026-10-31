@@ -117,7 +117,7 @@
 //
 // # Usage
 //
-//	//go:generate go run github.com/mandelsoft/gowrappedtypes/cmd/gowt
+//	//go:generate go run github.com/mandelsoft/gowrappedtypes
 package main
 
 import (
@@ -126,7 +126,7 @@ import (
 
 	"github.com/mandelsoft/vfs/pkg/osfs"
 
-	"github.com/mandelsoft/gowrappedtypes/pkg/gowt"
+	"github.com/mandelsoft/gowrappedtypes/gowt"
 )
 
 func main() {
