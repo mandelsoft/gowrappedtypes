@@ -17,9 +17,11 @@
 // included in module downloads, so cross-package templates work even from
 // dependencies fetched via the module proxy.
 //
-// The template defines a struct type with a single type parameter that
-// represents the embedded base type, together with any number of functions
-// (generic or non-generic) that operate on that type.
+// The template defines a struct type with one or more type parameters.  The
+// first type parameter represents the embedded base type; additional type
+// parameters are substituted with concrete types from the directive.  The
+// template may also contain any number of functions (generic or non-generic)
+// that operate on that type.
 //
 // Three special identifiers are recognised anywhere in a template:
 //
@@ -31,6 +33,25 @@
 //   - PACKAGE. (always written with a trailing dot) is replaced by the alias
 //     of the package named in the "using" clause, or removed entirely when no
 //     "using" clause is present; see "Substitution pipeline" step 7.
+//
+// # Placeholder imports (gowt.*)
+//
+// When a template needs to reference multiple external packages that vary per
+// instantiation, it can declare placeholder imports using the gowt. prefix:
+//
+//	import "gowt.registry"
+//	import "gowt.config"
+//
+// These are not real Go imports.  The gowt. prefix marks them as placeholders
+// that are resolved at generation time via named entries in the "using" clause.
+// In the template code, the placeholder's alias (derived from the import path
+// as usual, e.g. "registry" from "gowt.registry") is used as a normal Go
+// package qualifier.  An explicit import alias is also supported:
+//
+//	import reg "gowt.registry"
+//
+// The directive maps each placeholder to a real package with name=pkg syntax
+// in the "using" clause (see "Instantiation directives").
 //
 // Example template (wrapper_gowt.go):
 //
@@ -70,12 +91,22 @@
 //	// gowt: type Service wrapping Wrapper[*base.Handler via New]
 //	// gowt: type Service wrapping Wrapper[*base.Handler via base.New]
 //
-// An optional "using" clause names a package whose import is added to the
-// generated file and whose alias replaces the PACKAGE. placeholder in the
-// template (see "Substitution pipeline").  When "using" is omitted, PACKAGE.
+// When the template has multiple type parameters, additional concrete types
+// are listed after the "via" clause (or after the base type), separated by
+// commas.  They are matched to the template's type parameters by position:
+//
+//	// gowt: type Service wrapping Wrapper[*base.Handler via New, cfg.Config]
+//	// gowt: type Service wrapping Wrapper[*base.Handler, cfg.Config]
+//
+// An optional "using" clause names packages for placeholder substitution.
+// A bare package maps to the PACKAGE. placeholder; named entries (name=pkg)
+// map to gowt.<name> placeholder imports in the template.  Entries are
+// comma-separated.  When the default "using" package is omitted, PACKAGE.
 // is removed, leaving an unqualified identifier suitable for the local package:
 //
 //	// gowt: type Endpoint wrapping Wrapper[*base.Handler] using registry
+//	// gowt: type Endpoint wrapping Wrapper[*base.Handler] using registry=github.com/example/registry
+//	// gowt: type Endpoint wrapping Wrapper[*base.Handler] using github.com/example/extras, registry=github.com/example/registry
 //
 // An optional "renaming" clause maps identifiers to new names in the generated
 // output:
@@ -106,10 +137,11 @@
 //     the template name are preserved; pre-order).
 //  2. func F[TypeParam ...] → func F  (removes type parameters from function
 //     signatures; pre-order).
-//  3. TypeParam: → BaseType:  (struct-literal field keys).
-//  4. TypeParam → [*]BasePkg.BaseType  (all remaining occurrences in type
-//     expressions; the "*" prefix is added when the instantiation uses a
-//     pointer base type).
+//  3. TypeParam: → ConcreteType:  (struct-literal field keys; applies to all
+//     type parameters).
+//  4. TypeParam → [*]Pkg.ConcreteType  (all remaining occurrences in type
+//     expressions; the "*" prefix is added when the type argument is a
+//     pointer; applies to all type parameters).
 //  5. Bare *TemplateName* → *GeneratedName*  (all identifiers containing the
 //     template name, with the same prefix/suffix preservation as step 1;
 //     qualified references like pkg.Name are left untouched).

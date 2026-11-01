@@ -8,10 +8,12 @@ import (
 )
 
 // Compile-time check: base type must satisfy the template constraint.
-var _ fmt.Stringer = (*base.Base)(nil)
+type _gowtCheckConcrete[T0 fmt.Stringer] struct{}
+
+var _ _gowtCheckConcrete[*base.Base]
 
 type Concrete struct {
-	base.Base
+	*base.Base
 	Extra int
 }
 

@@ -81,13 +81,59 @@ func generateInstantiation(info *GoFileInfo, inst InstantiationSpec) (*Generatio
 		}
 	}
 
-	// Resolve optional "using" package.
+	// Resolve optional default "using" package (PACKAGE. placeholder).
 	var usingAlias, usingImportPath string
-	if inst.UsingPkg != "" {
-		usingImportPath, usingAlias, err = resolveImportRef(info, inst.UsingPkg)
+	if defaultPkg, ok := inst.UsingPkgs[""]; ok {
+		usingImportPath, usingAlias, err = resolveImportRef(info, defaultPkg)
 		if err != nil {
-			return nil, fmt.Errorf("resolving using package %q: %w", inst.UsingPkg, err)
+			return nil, fmt.Errorf("resolving using package %q: %w", defaultPkg, err)
 		}
+	}
+
+	// Validate extra type arg count against template type params.
+	if len(inst.ExtraTypeArgs) != len(decl.TypeParams)-1 {
+		return nil, fmt.Errorf("template %s has %d type parameters, but directive provides %d type arguments",
+			inst.TmplName, len(decl.TypeParams), 1+len(inst.ExtraTypeArgs))
+	}
+
+	// Resolve extra type arguments and build ExtraSubst list.
+	var extraSubsts []ExtraSubst
+	var extraImportPaths []string
+	for i, eta := range inst.ExtraTypeArgs {
+		importPath, alias, err := resolveImportRef(info, eta.PkgAlias)
+		if err != nil {
+			return nil, fmt.Errorf("resolving extra type arg #%d package %q: %w", i+2, eta.PkgAlias, err)
+		}
+		if importPath != "" {
+			extraImportPaths = append(extraImportPaths, importPath)
+		}
+		extraSubsts = append(extraSubsts, ExtraSubst{
+			TypeParam: decl.TypeParams[i+1].Name,
+			Pkg:       alias,
+			TypeName:  eta.TypeName,
+			Ptr:       eta.Ptr,
+		})
+	}
+
+	// Resolve gowt.* placeholder imports via named "using" entries.
+	for _, ph := range gf.PlaceholderImports {
+		realPkg, ok := inst.UsingPkgs[ph.Name]
+		if !ok {
+			return nil, fmt.Errorf("template uses placeholder import %q but no using mapping for %q was provided in the directive",
+				"gowt."+ph.Name, ph.Name)
+		}
+		phImportPath, phAlias, err := resolveImportRef(info, realPkg)
+		if err != nil {
+			return nil, fmt.Errorf("resolving using package %q for placeholder %q: %w", realPkg, ph.Name, err)
+		}
+		// If the resolved alias differs from the template alias, we need
+		// an explicit import alias so that the template code's qualifiers
+		// (which use ph.Alias) continue to work.
+		imp := ImportSpec{Path: phImportPath}
+		if phAlias != ph.Alias {
+			imp.Alias = ph.Alias
+		}
+		gf.Imports = append(gf.Imports, imp)
 	}
 
 	// Build the import set for the generated file.
@@ -95,12 +141,18 @@ func generateInstantiation(info *GoFileInfo, inst InstantiationSpec) (*Generatio
 	for _, imp := range gf.Imports {
 		importMap[imp.Path] = imp
 	}
-	for _, p := range []string{baseImportPath, ctorImportPath, usingImportPath} {
+	addImport := func(p string) {
 		if p != "" {
 			if _, exists := importMap[p]; !exists {
 				importMap[p] = ImportSpec{Path: p}
 			}
 		}
+	}
+	addImport(baseImportPath)
+	addImport(ctorImportPath)
+	addImport(usingImportPath)
+	for _, p := range extraImportPaths {
+		addImport(p)
 	}
 	var imports []ImportSpec
 	for _, imp := range importMap {
@@ -110,31 +162,55 @@ func generateInstantiation(info *GoFileInfo, inst InstantiationSpec) (*Generatio
 	// Apply AST-based substitutions to the template declarations.
 	ctor := ctorLocalAlias + "." + inst.CtorFuncName
 	substituted, err := substituteDecls(gf, SubstParams{
-		TmplName:   decl.Name,
-		TypeParam:  decl.TypeParam,
-		Constraint: decl.Constraint,
-		TargetName: inst.TypeName,
-		BasePkg:    basePkgAlias,
-		BaseType:   inst.BaseTypeName,
-		BasePtr:    inst.BasePtr,
-		Ctor:       ctor,
-		Renames:    inst.Renames,
-		UsingAlias: usingAlias,
+		TmplName:    decl.Name,
+		TypeParam:   decl.TypeParams[0].Name,
+		TargetName:  inst.TypeName,
+		BasePkg:     basePkgAlias,
+		BaseType:    inst.BaseTypeName,
+		BasePtr:     inst.BasePtr,
+		Ctor:        ctor,
+		ExtraParams: extraSubsts,
+		Renames:     inst.Renames,
+		UsingAlias:  usingAlias,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("substitution: %w", err)
 	}
 
-	// Build compile-time constraint assertion when the template has a
-	// non-trivial type constraint (anything other than "any").
+	// Build compile-time constraint assertion when at least one type
+	// parameter has a non-trivial constraint.
 	var constraintAssertion string
-	if c := decl.Constraint; c != "" && c != "any" {
-		baseExpr := basePkgAlias + "." + inst.BaseTypeName
-		if inst.BasePtr {
-			constraintAssertion = fmt.Sprintf("_ %s = (%s)(nil)", c, baseExpr)
-		} else {
-			constraintAssertion = fmt.Sprintf("_ %s = (*%s)(nil)", c, baseExpr)
+	hasNonTrivial := false
+	for _, tp := range decl.TypeParams {
+		if tp.Constraint != "" && tp.Constraint != "any" {
+			hasNonTrivial = true
+			break
 		}
+	}
+	if hasNonTrivial {
+		var checkParams, checkArgs []string
+		for i, tp := range decl.TypeParams {
+			checkParams = append(checkParams, fmt.Sprintf("T%d %s", i, tp.Constraint))
+			if i == 0 {
+				expr := basePkgAlias + "." + inst.BaseTypeName
+				if inst.BasePtr {
+					expr = "*" + expr
+				}
+				checkArgs = append(checkArgs, expr)
+			} else {
+				es := extraSubsts[i-1]
+				expr := es.Pkg + "." + es.TypeName
+				if es.Ptr {
+					expr = "*" + expr
+				}
+				checkArgs = append(checkArgs, expr)
+			}
+		}
+		constraintAssertion = fmt.Sprintf(
+			"type _gowtCheck%s[%s] struct{}\nvar _ _gowtCheck%s[%s]",
+			inst.TypeName, strings.Join(checkParams, ", "),
+			inst.TypeName, strings.Join(checkArgs, ", "),
+		)
 	}
 
 	ctx := genContext{
@@ -153,3 +229,4 @@ func generateInstantiation(info *GoFileInfo, inst InstantiationSpec) (*Generatio
 	outPath := filepath.Join(info.Dir, strings.ToLower(inst.TypeName)+"_gowtgen.go")
 	return &GenerationResult{Path: outPath, Content: out}, nil
 }
+

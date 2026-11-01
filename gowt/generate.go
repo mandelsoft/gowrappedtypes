@@ -40,7 +40,7 @@ import (
 {{- if .ConstraintAssertion}}
 
 // Compile-time check: base type must satisfy the template constraint.
-var {{.ConstraintAssertion}}
+{{.ConstraintAssertion}}
 {{- end}}
 {{range .Decls}}
 {{.}}
@@ -61,18 +61,26 @@ func generateSource(ctx genContext) ([]byte, error) {
 	return out, nil
 }
 
+// ExtraSubst describes the substitution for one additional type parameter.
+type ExtraSubst struct {
+	TypeParam string // template param name (e.g. "Config")
+	Pkg       string // resolved package alias
+	TypeName  string // unqualified type name
+	Ptr       bool
+}
+
 // SubstParams holds all substitution parameters for a single instantiation.
 type SubstParams struct {
-	TmplName   string            // template type name (e.g. "Environment")
-	TypeParam  string            // type parameter name (e.g. "Base")
-	Constraint string            // type parameter constraint (e.g. "epi.Environment"); "any" or "" = no check
-	TargetName string            // generated type name (e.g. "MyEnv")
-	BasePkg    string            // base type package alias (e.g. "common")
-	BaseType   string            // base type unqualified name (e.g. "Environment")
-	BasePtr    bool              // whether the base type is a pointer
-	Ctor       string            // "pkg.Func" form of the constructor
-	Renames    map[string]string // optional explicit renames: old → new
-	UsingAlias string            // resolved alias for the PACKAGE. placeholder (empty = local)
+	TmplName    string            // template type name (e.g. "Environment")
+	TypeParam   string            // first type parameter name (e.g. "Base")
+	TargetName  string            // generated type name (e.g. "MyEnv")
+	BasePkg     string            // base type package alias (e.g. "common")
+	BaseType    string            // base type unqualified name (e.g. "Environment")
+	BasePtr     bool              // whether the base type is a pointer
+	Ctor        string            // "pkg.Func" form of the constructor
+	ExtraParams []ExtraSubst      // additional type parameter substitutions
+	Renames     map[string]string // optional explicit renames: old → new
+	UsingAlias  string            // resolved alias for the PACKAGE. placeholder (empty = local)
 }
 
 // substituteDecls applies all template substitutions to gf's AST and returns
@@ -100,7 +108,23 @@ func substituteDecls(gf *GowtFile, p SubstParams) ([]string, error) {
 		return nil, fmt.Errorf("ctor %q: expected pkg.Func form", p.Ctor)
 	}
 
-	baseTypeExpr := buildTypeExpr(p.BasePkg, p.BaseType, p.BasePtr)
+	// Build type parameter substitution map covering the base type and all extras.
+	type typeParamSub struct {
+		expr     ast.Expr // full type expression for replacement
+		baseName string   // unqualified name for struct-literal keys
+	}
+	typeParamMap := map[string]typeParamSub{
+		p.TypeParam: {
+			expr:     buildTypeExpr(p.BasePkg, p.BaseType, p.BasePtr),
+			baseName: p.BaseType,
+		},
+	}
+	for _, ep := range p.ExtraParams {
+		typeParamMap[ep.TypeParam] = typeParamSub{
+			expr:     buildTypeExpr(ep.Pkg, ep.TypeName, ep.Ptr),
+			baseName: ep.TypeName,
+		}
+	}
 
 	// Reject PACKAGE.NEW: NEW belongs to the "via" package; PACKAGE. belongs to
 	// the "using" package.  Combining them into a single selector is contradictory
@@ -184,17 +208,15 @@ func substituteDecls(gf *GowtFile, p SubstParams) ([]string, error) {
 					return true
 				}
 
-				// Steps 3+4: TypeParam.
-				if n.Name == p.TypeParam {
+				// Steps 3+4: TypeParam substitution (base + extras).
+				if sub, ok := typeParamMap[n.Name]; ok {
 					_, inKV := c.Parent().(*ast.KeyValueExpr)
 					if inKV && c.Name() == "Key" {
-						// Struct-literal field key: unqualified base type name only.
-						c.Replace(&ast.Ident{NamePos: n.NamePos, Name: p.BaseType})
+						// Struct-literal field key: unqualified type name only.
+						c.Replace(&ast.Ident{NamePos: n.NamePos, Name: sub.baseName})
 					} else {
-						// Type-expression context: full [*]BasePkg.BaseType.
-						// Preserve the original position so the printer does not
-						// introduce spurious blank lines between struct fields.
-						c.Replace(cloneTypeExprAt(baseTypeExpr, n.NamePos))
+						// Type-expression context: full [*]Pkg.Type.
+						c.Replace(cloneTypeExprAt(sub.expr, n.NamePos))
 					}
 					return true
 				}

@@ -19,18 +19,26 @@ type GoFileInfo struct {
 	Instantiations []InstantiationSpec
 }
 
-// InstantiationSpec is one parsed "// type X wrapping [pkg.]W[T via Ctor]" directive.
+// ExtraTypeArg is an additional type argument beyond the base type in a directive.
+type ExtraTypeArg struct {
+	Ptr      bool   // leading *
+	PkgAlias string // package alias or full import path
+	TypeName string // unqualified type name
+}
+
+// InstantiationSpec is one parsed "// type X wrapping [pkg.]W[T via Ctor, T2, T3]" directive.
 type InstantiationSpec struct {
-	TypeName     string            // X  — the generated concrete type name
-	TmplPkg      string            // package alias/path for the template (empty = current package)
-	TmplName     string            // W  — the template type name in the _gowt.go file
-	BasePtr      bool              // true when the base type is written as *Pkg.Type
-	BasePkgAlias string            // local alias of the base type's package (e.g. "common")
-	BaseTypeName string            // unqualified base type name (e.g. "Environment")
-	CtorPkgAlias string            // local alias of the constructor's package (e.g. "common")
-	CtorFuncName string            // unqualified constructor function name (e.g. "New")
-	UsingPkg     string            // optional package for PACKAGE. substitution (empty = local package)
-	Renames      map[string]string // optional explicit method renames: old → new
+	TypeName      string            // X  — the generated concrete type name
+	TmplPkg       string            // package alias/path for the template (empty = current package)
+	TmplName      string            // W  — the template type name in the _gowt.go file
+	BasePtr       bool              // true when the base type is written as *Pkg.Type
+	BasePkgAlias  string            // local alias of the base type's package (e.g. "common")
+	BaseTypeName  string            // unqualified base type name (e.g. "Environment")
+	CtorPkgAlias  string            // local alias of the constructor's package (e.g. "common")
+	CtorFuncName  string            // unqualified constructor function name (e.g. "New")
+	ExtraTypeArgs []ExtraTypeArg    // additional type arguments after the base+via
+	UsingPkgs     map[string]string  // using clause mappings: "" → PACKAGE. default, "name" → gowt.<name>
+	Renames       map[string]string // optional explicit method renames: old → new
 }
 
 // scanGoFile parses path using fs and returns its package, imports and gowt directives.
@@ -130,12 +138,40 @@ func parseInstComment(text string) (InstantiationSpec, bool, error) {
 	typeArg := strings.TrimSpace(s[:bClose])
 	tail := strings.TrimSpace(s[bClose+1:])
 
-	// Parse optional "using <pkg>" clause before "renaming".
-	var usingPkg string
+	// Parse optional "using" clause before "renaming".
+	// Entries are comma-separated: bare pkg → PACKAGE. default, name=pkg → gowt.<name>.
+	var usingPkgs map[string]string
 	if strings.HasPrefix(tail, "using ") {
 		tail = strings.TrimSpace(tail[len("using "):])
-		usingPkg, tail, _ = cutWord(tail)
-		tail = strings.TrimSpace(tail)
+		// Separate using entries from optional renaming clause.
+		var usingRaw string
+		if ri := strings.Index(tail, " renaming"); ri >= 0 {
+			usingRaw = strings.TrimSpace(tail[:ri])
+			tail = strings.TrimSpace(tail[ri+1:])
+		} else {
+			usingRaw = strings.TrimSpace(tail)
+			tail = ""
+		}
+		usingPkgs = make(map[string]string)
+		for _, entry := range strings.Split(usingRaw, ",") {
+			entry = strings.TrimSpace(entry)
+			if entry == "" {
+				continue
+			}
+			if eq := strings.Index(entry, "="); eq >= 0 {
+				name := strings.TrimSpace(entry[:eq])
+				pkg := strings.TrimSpace(entry[eq+1:])
+				if name == "" || pkg == "" {
+					return InstantiationSpec{}, false, fmt.Errorf("type %s: using: name and package must not be empty in %q", typeName, entry)
+				}
+				usingPkgs[name] = pkg
+			} else {
+				if _, exists := usingPkgs[""]; exists {
+					return InstantiationSpec{}, false, fmt.Errorf("type %s: using: only one default package (without name=) is allowed", typeName)
+				}
+				usingPkgs[""] = entry
+			}
+		}
 	}
 
 	// Parse optional "renaming OldName=NewName,..." after the closing ']'.
@@ -170,9 +206,14 @@ func parseInstComment(text string) (InstantiationSpec, bool, error) {
 		tmplName = tmplRef
 	}
 
-	// Parse typeArg: "BasePkg.BaseType [via [CtorPkg.]CtorFunc]"
+	// Split type arguments on commas.  The first element is the base type
+	// with an optional "via" clause; subsequent elements are extra type args.
+	argParts := strings.Split(typeArg, ",")
+	firstArg := strings.TrimSpace(argParts[0])
+
+	// Parse firstArg: "BasePkg.BaseType [via [CtorPkg.]CtorFunc]"
 	var baseRef, ctorRef string
-	viaParts := strings.SplitN(typeArg, " via ", 2)
+	viaParts := strings.SplitN(firstArg, " via ", 2)
 	baseRef = strings.TrimSpace(viaParts[0])
 	if len(viaParts) == 2 {
 		ctorRef = strings.TrimSpace(viaParts[1])
@@ -203,17 +244,36 @@ func parseInstComment(text string) (InstantiationSpec, bool, error) {
 		ctorFunc = ctorRef
 	}
 
+	// Parse extra type arguments (everything after the first comma).
+	var extraTypeArgs []ExtraTypeArg
+	for _, raw := range argParts[1:] {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			return InstantiationSpec{}, false, fmt.Errorf("type %s: empty extra type argument", typeName)
+		}
+		ptr := strings.HasPrefix(raw, "*")
+		if ptr {
+			raw = raw[1:]
+		}
+		pkg, name, err := splitDot(raw)
+		if err != nil {
+			return InstantiationSpec{}, false, fmt.Errorf("type %s: extra type arg: %w", typeName, err)
+		}
+		extraTypeArgs = append(extraTypeArgs, ExtraTypeArg{Ptr: ptr, PkgAlias: pkg, TypeName: name})
+	}
+
 	return InstantiationSpec{
-		TypeName:     typeName,
-		TmplPkg:      tmplPkg,
-		TmplName:     tmplName,
-		BasePtr:      basePtr,
-		BasePkgAlias: basePkg,
-		BaseTypeName: baseType,
-		CtorPkgAlias: ctorPkg,
-		CtorFuncName: ctorFunc,
-		UsingPkg:     usingPkg,
-		Renames:      renames,
+		TypeName:      typeName,
+		TmplPkg:       tmplPkg,
+		TmplName:      tmplName,
+		BasePtr:       basePtr,
+		BasePkgAlias:  basePkg,
+		BaseTypeName:  baseType,
+		CtorPkgAlias:  ctorPkg,
+		CtorFuncName:  ctorFunc,
+		ExtraTypeArgs: extraTypeArgs,
+		UsingPkgs:     usingPkgs,
+		Renames:       renames,
 	}, true, nil
 }
 

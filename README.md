@@ -70,12 +70,12 @@ directory as the `.go` file containing the directive.
 ## Template files
 
 A `_gowt.go` file is ordinary Go source — parseable by `go/parser` — that
-defines a **struct type with exactly one type parameter** representing the
-embedded base type, together with any number of functions (generic or
-non-generic) that operate on that type.  The type parameter is used as an
-embedded field, which is not valid Go — the `//go:build ignore` constraint
-ensures the compiler never sees the template, while `go/parser` (which does
-not type-check) can still parse it.
+defines a **struct type with one or more type parameters**.  The first type
+parameter represents the embedded base type; additional type parameters are
+substituted with concrete types from the directive.  The first type parameter
+is used as an embedded field, which is not valid Go — the `//go:build ignore`
+constraint ensures the compiler never sees the template, while `go/parser`
+(which does not type-check) can still parse it.
 
 ### Placeholders
 
@@ -163,8 +163,9 @@ func Describe(w *Wrapper) string {
 A template may contain any combination of:
 
 - **One parameterized struct type** — the "main" declaration that drives the
-  substitution.  Its single type parameter is the base type that will be
-  replaced during instantiation.
+  substitution.  Its first type parameter is the embedded base type; additional
+  type parameters (if any) are replaced with the concrete types given in the
+  directive.
 
 - **Generic functions** — functions with the same type parameter as the struct.
   The type parameter list is stripped from the generated output, and the type
@@ -224,10 +225,36 @@ This tells `gowt` to:
 The full syntax, with all optional clauses, is:
 
 ```
-// gowt: type <Name> wrapping [<TmplPkg>.]<Template>[<BaseType> [via [<CtorPkg>.]<Ctor>]] [using <Pkg>] [renaming <Old>=<New>,...]
+// gowt: type <Name> wrapping [<TmplPkg>.]<Template>[<BaseType> [via [<CtorPkg>.]<Ctor>][, <Type2>[, <Type3>...]]] [using <Pkg>] [renaming <Old>=<New>,...]
 ```
 
 Each part is described below.
+
+### Multiple type parameters
+
+When the template has more than one type parameter, the additional concrete
+types are listed after the `via` clause (or after the base type when `via` is
+omitted), separated by commas:
+
+```go
+// Template with two type parameters:
+// type Wrapper[Base any, Config fmt.Stringer] struct { ... }
+
+// Directive — base type + extra type arg:
+// gowt: type Service wrapping Wrapper[*base.Handler via base.New, cfg.Config]
+
+// Without via:
+// gowt: type Service wrapping Wrapper[*base.Handler, cfg.Config]
+```
+
+The extra type arguments are matched to the template's type parameters by
+position.  The number of type arguments in the directive must match the number
+of type parameters in the template.  Each extra argument follows the same
+`[*]Pkg.Type` syntax as the base type.
+
+When any type parameter has a non-trivial constraint (anything other than
+`any`), the generated file includes a compile-time assertion that verifies all
+type arguments satisfy their respective constraints.
 
 ### Base type
 
@@ -283,12 +310,20 @@ for `_gowt.go` files there.
 
 ### The `using` clause
 
-The optional `using` clause names a package whose import is added to the
-generated file and whose alias replaces the `PACKAGE.` placeholder throughout
-the template:
+The optional `using` clause names packages for placeholder substitution.
+Entries are comma-separated.  A bare package maps to the `PACKAGE.` placeholder;
+named entries (`name=pkg`) map to `gowt.<name>` placeholder imports in the
+template:
 
 ```go
+// Default PACKAGE. mapping (backward compatible):
 // gowt: type Endpoint wrapping Wrapper[*base.Handler] using github.com/example/registry
+
+// Named placeholder mapping:
+// gowt: type Endpoint wrapping Wrapper[*base.Handler] using registry=github.com/example/registry
+
+// Both default and named:
+// gowt: type Endpoint wrapping Wrapper[*base.Handler] using github.com/example/extras, registry=github.com/example/registry
 ```
 
 | Template source | With `using registry` | Without `using` |
@@ -300,6 +335,67 @@ the template:
 When `using` is **omitted**, `PACKAGE.` is removed entirely, leaving bare
 unqualified identifiers.  This is the correct behaviour when the referenced
 types and functions are in the same package as the generated code.
+
+### Placeholder imports (`gowt.*`)
+
+When a template needs to reference multiple external packages that vary per
+instantiation, it can declare **placeholder imports** using the `gowt.` prefix:
+
+```go
+import "gowt.registry"
+import "gowt.config"
+```
+
+These are not real Go imports — `go/parser` can parse them, but the `gowt.`
+prefix marks them as placeholders resolved at generation time.  In the template
+code, the placeholder's alias (derived from the import path as usual, e.g.
+`registry` from `gowt.registry`) is used as a normal Go package qualifier:
+
+```go
+//go:build ignore
+
+package mypkg
+
+import "gowt.registry"
+
+type Template[Base any] struct {
+    Base
+    Reg *registry.Registry
+}
+
+func NewTemplate[Base any](name string) (*Template[Base], error) {
+    v, err := NEW(name)
+    if err != nil {
+        return nil, err
+    }
+    return &Template[Base]{Base: v, Reg: registry.NewRegistry(name)}, nil
+}
+```
+
+The directive maps each placeholder to a real package using `name=pkg` entries
+in the `using` clause:
+
+```go
+// gowt: type Service wrapping Template[*base.Handler] using registry=github.com/example/registry
+```
+
+An explicit import alias is also supported in the template:
+
+```go
+import reg "gowt.registry"
+// Template code uses reg.Registry, reg.NewRegistry, etc.
+```
+
+All `gowt.*` placeholder imports in the template **must** have a corresponding
+`using` entry; the generator reports an error if a mapping is missing.
+
+The `gowt.*` mechanism and `PACKAGE.` can be combined in the same template.
+`PACKAGE.` is mapped by the bare (unnamed) `using` entry, while `gowt.*`
+imports are mapped by named entries:
+
+```go
+// gowt: type Service wrapping Template[*base.Handler] using github.com/example/extras, registry=github.com/example/registry
+```
 
 ### The `renaming` clause
 
@@ -346,6 +442,10 @@ first:
 | `Wrapper[*base.Handler] renaming Describe=Info` | Rename `Describe` to `Info` in output |
 | `Wrapper[*base.Handler] using registry renaming Describe=Info` | Combined clauses |
 | `mypkg.Wrapper[*base.Handler]` | Template from another package |
+| `Wrapper[*base.Handler, cfg.Config]` | Extra type parameter (matched by position) |
+| `Wrapper[*base.Handler via New, cfg.Config]` | Extra type parameter with explicit `via` |
+| `Template[*base.Handler] using reg=github.com/example/registry` | `gowt.reg` placeholder resolved to real package |
+| `Template[*base.Handler] using github.com/example/extras, reg=github.com/example/registry` | `PACKAGE.` and `gowt.reg` combined |
 
 ## Name conventions
 
@@ -401,8 +501,8 @@ identifier matches both a rename and another rule.
 | 0 | `OldName` (from `renaming`) | `NewName` | Highest priority; applies everywhere (post-order). |
 | 1 | `*TemplateName*[...]` | `*GeneratedName*` | Type expressions with type-argument lists.  Prefix and suffix are preserved (pre-order). |
 | 2 | `func F[TypeParam ...]` | `func F` | Strips type parameters from function and type declarations (pre-order). |
-| 3 | `TypeParam:` (in struct literal key) | `BaseType:` | Unqualified base type name only (Go struct literal keys must not be pointer-qualified). |
-| 4 | `TypeParam` (elsewhere) | `[*]BasePkg.BaseType` | Full qualified type; `*` added when the base type is a pointer. |
+| 3 | `TypeParam:` (in struct literal key) | `ConcreteType:` | Unqualified type name only (Go struct literal keys must not be pointer-qualified).  Applies to all type parameters. |
+| 4 | `TypeParam` (elsewhere) | `[*]Pkg.ConcreteType` | Full qualified type; `*` added when the type argument is a pointer.  Applies to all type parameters. |
 | 5 | bare `*TemplateName*` | `*GeneratedName*` | All identifiers containing the template type name.  Prefix and suffix preserved.  Qualified references (`pkg.Name`) are left untouched. |
 | 6 | `NEW` | `CtorPkg.CtorFunc` | Constructor placeholder. |
 | 7 | `PACKAGE.X` | `UsingAlias.X` or `X` | Package placeholder.  When no `using` clause, the qualifier is removed. |
@@ -429,9 +529,10 @@ deduplicated; stdlib imports are sorted before third-party imports.
 
 ## Complete examples
 
-A working example tree is provided under [`examples/`](examples/).  The same
-template is instantiated twice — once with minimal options (basic) and once
-with all clauses (full):
+A working example tree is provided under [`examples/`](examples/).  The
+`wrapper_gowt.go` template is instantiated twice — once with minimal options
+(basic) and once with all clauses (full).  A second template
+(`layered_gowt.go`) demonstrates `gowt.*` placeholder imports:
 
 ```
 examples/
@@ -441,14 +542,18 @@ examples/
 │   └── registry.go                # Registry type, NewRegistry
 ├── template/                      # template package (cross-package)
 │   ├── doc.go                     # package declaration for go list
-│   └── wrapper_gowt.go           # template: NEW, PACKAGE., *Wrapper*
+│   ├── wrapper_gowt.go           # template: NEW, PACKAGE., *Wrapper*
+│   └── layered_gowt.go           # template: gowt.registry placeholder import
 ├── basic/                         # simple instantiation
 │   ├── types.go                   # directive: default via, no using
 │   ├── registry.go                # local Registry (PACKAGE. stripped)
 │   └── service_gowtgen.go         # generated
-└── full/                          # advanced instantiation
-    ├── types.go                   # directive: via, using, renaming
-    └── endpoint_gowtgen.go        # generated
+├── full/                          # advanced instantiation
+│   ├── types.go                   # directive: via, using, renaming
+│   └── endpoint_gowtgen.go        # generated
+└── placeholder/                   # gowt.* placeholder import instantiation
+    ├── types.go                   # directive: named using entry
+    └── gateway_gowtgen.go         # generated
 ```
 
 ### Basic — default constructor, no `using`
@@ -576,3 +681,99 @@ Compared to the basic case:
 - `PACKAGE.Registry` became `registry.Registry` (`using registry` adds the import and qualifies all `PACKAGE.` references).
 - `Describe` became `Info` (`renaming Describe=Info`).
 - `NewWrapper` → `NewEndpoint` and `RegisterWrapper` → `RegisterEndpoint` (`*TemplateName*` substitution with target name `Endpoint`).
+
+### Placeholder imports — `gowt.*` instead of `PACKAGE.`
+
+The `layered_gowt.go` template uses `import "gowt.registry"` — a placeholder
+import — instead of the `PACKAGE.` convention.  The template code uses
+`registry.` as a normal Go qualifier:
+
+**Template** (`template/layered_gowt.go`):
+
+```go
+//go:build ignore
+
+// Layered[Base] demonstrates gowt.* placeholder imports.  Instead of the
+// PACKAGE. convention, each external dependency is declared as a regular
+// import with a gowt. prefix.  The directive maps each placeholder to a
+// real package via named entries in the "using" clause.
+package template
+
+import "gowt.registry"
+
+// Layered embeds a base type and a Registry from a placeholder import.
+type Layered[Base any] struct {
+	Base
+	Registry *registry.Registry
+	Label    string
+}
+
+// NewLayered creates a Layered value.  NEW is replaced by the "via"
+// constructor; the registry qualifier comes from the gowt.registry
+// placeholder import.
+func NewLayered[Base any](name string) (*Layered[Base], error) {
+	b, err := NEW(name)
+	if err != nil {
+		return nil, err
+	}
+	return &Layered[Base]{
+		Base:     b,
+		Registry: registry.NewRegistry(),
+		Label:    name,
+	}, nil
+}
+
+func (l *Layered[Base]) GetLabel() string {
+	return l.Label
+}
+```
+
+**Directive** (`placeholder/types.go`):
+
+```go
+package placeholder
+
+//go:generate go run github.com/mandelsoft/gowrappedtypes
+
+// gowt: type Gateway wrapping github.com/mandelsoft/gowrappedtypes/examples/template.Layered[*github.com/mandelsoft/gowrappedtypes/examples/base.Handler] using registry=github.com/mandelsoft/gowrappedtypes/examples/registry
+```
+
+**Generated output** (`placeholder/gateway_gowtgen.go`):
+
+```go
+// Code generated by gowt from layered_gowt.go. DO NOT EDIT.
+
+package placeholder
+
+import (
+	"github.com/mandelsoft/gowrappedtypes/examples/base"
+	"github.com/mandelsoft/gowrappedtypes/examples/registry"
+)
+
+type Gateway struct {
+	*base.Handler
+	Registry *registry.Registry
+	Label    string
+}
+
+func NewGateway(name string) (*Gateway, error) {
+	b, err := base.New(name)
+	if err != nil {
+		return nil, err
+	}
+	return &Gateway{
+		Handler:  b,
+		Registry: registry.NewRegistry(),
+		Label:    name,
+	}, nil
+}
+
+func (l *Gateway) GetLabel() string {
+	return l.Label
+}
+```
+
+The `gowt.registry` import was replaced by the real `registry` package.
+Unlike `PACKAGE.`, placeholder imports work like regular Go imports — the
+template code uses the alias as a normal qualifier, so editors and linters
+can reason about the code even before generation.

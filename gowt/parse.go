@@ -15,21 +15,34 @@ type ImportSpec struct {
 	Path  string // import path without quotes
 }
 
+// TypeParamDecl describes one type parameter of a template type.
+type TypeParamDecl struct {
+	Name       string // type parameter name (e.g. "Base")
+	Constraint string // constraint expression text (e.g. "epi.Environment")
+}
+
 // GowtDecl describes one parameterized type template found in a _gowt.go file.
 type GowtDecl struct {
-	Name       string // template type name (e.g. "Environment")
-	TypeParam  string // type parameter name (e.g. "Base")
-	Constraint string // constraint expression text (e.g. "epi.Environment")
+	Name       string          // template type name (e.g. "Environment")
+	TypeParams []TypeParamDecl // index 0 = embedded base type param; rest = extra
+}
+
+// PlaceholderImport describes a gowt.* import in a template file.
+// These are not real Go imports but placeholders resolved via the "using" clause.
+type PlaceholderImport struct {
+	Name  string // name from gowt.<name> (e.g. "registry")
+	Alias string // qualifier used in template code (= Name when no explicit alias)
 }
 
 // GowtFile is the result of parsing a _gowt.go template file.
 type GowtFile struct {
-	Filename string
-	Package  string
-	Imports  []ImportSpec
-	Decls    []GowtDecl    // one entry per parameterized type declaration
-	File     *ast.File     // parsed AST; modified in place by substituteDecls
-	Fset     *token.FileSet // position information for File
+	Filename            string
+	Package             string
+	Imports             []ImportSpec        // real imports (excludes gowt.* placeholders)
+	PlaceholderImports  []PlaceholderImport // gowt.* placeholder imports
+	Decls               []GowtDecl          // one entry per parameterized type declaration
+	File                *ast.File           // parsed AST; modified in place by substituteDecls
+	Fset                *token.FileSet      // position information for File
 }
 
 // parseGowtFile parses a _gowt.go template file (written in Go generics syntax)
@@ -48,14 +61,23 @@ func parseGowtFile(filename, src string) (*GowtFile, error) {
 		Fset:     fset,
 	}
 
-	// Collect imports.
+	// Collect imports, separating gowt.* placeholders from real imports.
 	for _, imp := range f.Imports {
 		ipath := strings.Trim(imp.Path.Value, `"`)
 		var alias string
 		if imp.Name != nil && imp.Name.Name != "_" && imp.Name.Name != "." {
 			alias = imp.Name.Name
 		}
-		gf.Imports = append(gf.Imports, ImportSpec{Alias: alias, Path: ipath})
+		if strings.HasPrefix(ipath, "gowt.") {
+			name := ipath[len("gowt."):]
+			a := alias
+			if a == "" {
+				a = name
+			}
+			gf.PlaceholderImports = append(gf.PlaceholderImports, PlaceholderImport{Name: name, Alias: a})
+		} else {
+			gf.Imports = append(gf.Imports, ImportSpec{Alias: alias, Path: ipath})
+		}
 	}
 
 	// Walk top-level declarations to collect parameterized type metadata.
@@ -80,26 +102,30 @@ func parseGowtFile(filename, src string) (*GowtFile, error) {
 	return gf, nil
 }
 
-// extractDeclMeta extracts the type parameter name and constraint from a generic TypeSpec.
+// extractDeclMeta extracts type parameter names and constraints from a generic TypeSpec.
 func extractDeclMeta(fset *token.FileSet, ts *ast.TypeSpec, src string) (*GowtDecl, error) {
-	if len(ts.TypeParams.List) != 1 {
-		return nil, fmt.Errorf("type %s: gowt supports exactly one type parameter, got %d",
-			ts.Name.Name, len(ts.TypeParams.List))
-	}
-	tf := ts.TypeParams.List[0]
-	if len(tf.Names) != 1 {
-		return nil, fmt.Errorf("type %s: type parameter must have exactly one name", ts.Name.Name)
+	if len(ts.TypeParams.List) == 0 {
+		return nil, fmt.Errorf("type %s: expected at least one type parameter", ts.Name.Name)
 	}
 
 	tfile := fset.File(ts.Pos())
 	srcBytes := []byte(src)
-	constraintText := strings.TrimSpace(
-		string(srcBytes[tfile.Offset(tf.Type.Pos()):tfile.Offset(tf.Type.End())]),
-	)
+
+	var params []TypeParamDecl
+	for _, tf := range ts.TypeParams.List {
+		constraintText := strings.TrimSpace(
+			string(srcBytes[tfile.Offset(tf.Type.Pos()):tfile.Offset(tf.Type.End())]),
+		)
+		for _, name := range tf.Names {
+			params = append(params, TypeParamDecl{
+				Name:       name.Name,
+				Constraint: constraintText,
+			})
+		}
+	}
 
 	return &GowtDecl{
 		Name:       ts.Name.Name,
-		TypeParam:  tf.Names[0].Name,
-		Constraint: constraintText,
+		TypeParams: params,
 	}, nil
 }

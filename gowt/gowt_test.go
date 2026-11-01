@@ -63,11 +63,34 @@ var _ = Describe("gowt", func() {
 		Entry("suffix — prefix and suffix name substitution", "suffix"),
 		Entry("crosspkg — template declares different package than directive", "crosspkg"),
 		Entry("constraint — non-trivial type constraint emits compile-time check", "constraint"),
+		Entry("unionconstraint — union type constraint emits compile-time check", "unionconstraint"),
+		Entry("multitypeparam — template with two type parameters", "multitypeparam"),
+		Entry("placeholderpkg — gowt.* placeholder import via using clause", "placeholderpkg"),
+		Entry("mixedusing — PACKAGE. and gowt.* placeholder imports combined", "mixedusing"),
+		Entry("placeholderalias — gowt.* resolved via short import alias", "placeholderalias"),
+		Entry("namedimport — gowt.* resolved via named import alias", "namedimport"),
+		Entry("tmplalias — explicit alias on gowt.* import in template", "tmplalias"),
+		Entry("multiplaceholder — multiple gowt.* placeholders", "multiplaceholder"),
+		Entry("usingalias — PACKAGE. resolved via short import alias", "usingalias"),
 	)
 
 	It("rejects PACKAGE.NEW — contradictory via/using packages", func() {
 		_, err := GenerateGoFile(fs, "/testdata/invalid_package_new/directives.go")
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("PACKAGE.NEW is not valid"))
+	})
+
+	It("rejects missing placeholder import mapping", func() {
+		_, err := GenerateGoFile(fs, "/testdata/missing_placeholder/directives.go")
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("gowt.registry"))
+		Expect(err.Error()).To(ContainSubstring("no using mapping"))
+	})
+
+	It("rejects type argument count mismatch", func() {
+		_, err := GenerateGoFile(fs, "/testdata/paramcount_mismatch/directives.go")
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("2 type parameters"))
+		Expect(err.Error()).To(ContainSubstring("1 type arguments"))
 	})
 })
