@@ -16,10 +16,11 @@ import (
 
 // genContext is the data passed to the output template.
 type genContext struct {
-	Package    string
-	Imports    []ImportSpec
-	SourceFile string   // base name of the _gowt.go template file
-	Decls      []string // substituted declaration source texts, in order
+	Package             string
+	Imports             []ImportSpec
+	SourceFile          string   // base name of the _gowt.go template file
+	ConstraintAssertion string   // compile-time constraint check (empty = none)
+	Decls               []string // substituted declaration source texts, in order
 }
 
 var outputTemplate = template.Must(template.New("gowt").Parse(
@@ -36,6 +37,11 @@ import (
 {{- end}}
 {{- end}}
 )
+{{- if .ConstraintAssertion}}
+
+// Compile-time check: base type must satisfy the template constraint.
+var {{.ConstraintAssertion}}
+{{- end}}
 {{range .Decls}}
 {{.}}
 {{end}}`))
@@ -59,6 +65,7 @@ func generateSource(ctx genContext) ([]byte, error) {
 type SubstParams struct {
 	TmplName   string            // template type name (e.g. "Environment")
 	TypeParam  string            // type parameter name (e.g. "Base")
+	Constraint string            // type parameter constraint (e.g. "epi.Environment"); "any" or "" = no check
 	TargetName string            // generated type name (e.g. "MyEnv")
 	BasePkg    string            // base type package alias (e.g. "common")
 	BaseType   string            // base type unqualified name (e.g. "Environment")

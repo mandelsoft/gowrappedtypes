@@ -112,6 +112,7 @@ func generateInstantiation(info *GoFileInfo, inst InstantiationSpec) (*Generatio
 	substituted, err := substituteDecls(gf, SubstParams{
 		TmplName:   decl.Name,
 		TypeParam:  decl.TypeParam,
+		Constraint: decl.Constraint,
 		TargetName: inst.TypeName,
 		BasePkg:    basePkgAlias,
 		BaseType:   inst.BaseTypeName,
@@ -124,11 +125,24 @@ func generateInstantiation(info *GoFileInfo, inst InstantiationSpec) (*Generatio
 		return nil, fmt.Errorf("substitution: %w", err)
 	}
 
+	// Build compile-time constraint assertion when the template has a
+	// non-trivial type constraint (anything other than "any").
+	var constraintAssertion string
+	if c := decl.Constraint; c != "" && c != "any" {
+		baseExpr := basePkgAlias + "." + inst.BaseTypeName
+		if inst.BasePtr {
+			constraintAssertion = fmt.Sprintf("_ %s = (%s)(nil)", c, baseExpr)
+		} else {
+			constraintAssertion = fmt.Sprintf("_ %s = (*%s)(nil)", c, baseExpr)
+		}
+	}
+
 	ctx := genContext{
-		Package:    info.Package,
-		Imports:    imports,
-		SourceFile: filepath.Base(tmplPath),
-		Decls:      substituted,
+		Package:             info.Package,
+		Imports:             imports,
+		SourceFile:          filepath.Base(tmplPath),
+		ConstraintAssertion: constraintAssertion,
+		Decls:               substituted,
 	}
 
 	out, err := generateSource(ctx)

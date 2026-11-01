@@ -62,6 +62,7 @@ var _ = Describe("gowt", func() {
 		Entry("unqualifiedvia — via with bare function name, uses base package", "unqualifiedvia"),
 		Entry("suffix — prefix and suffix name substitution", "suffix"),
 		Entry("crosspkg — template declares different package than directive", "crosspkg"),
+		Entry("constraint — non-trivial type constraint emits compile-time check", "constraint"),
 	)
 
 	It("rejects PACKAGE.NEW — contradictory via/using packages", func() {
